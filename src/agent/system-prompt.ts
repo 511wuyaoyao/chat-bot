@@ -7,11 +7,11 @@ import { PreClassifyHint } from "../router/pre-classify";
 import { toolRegistry } from "./tool-registry";
 import { PROMPT_CORE, PROMPT_RULES } from "../messages";
 
-/** 角色定义 + 通用规则（与具体工具无关） */
+/** 构建可用工具列表（纯文本，不用 markdown） */
 function buildToolList(): string {
   const defs = toolRegistry.getDefinitions();
   return defs
-    .map((t) => `- **${t.function.name}** — ${t.function.description}`)
+    .map((t) => `${t.function.name}：${t.function.description}`)
     .join("\n");
 }
 
@@ -19,7 +19,7 @@ function buildToolList(): string {
 function buildUsageGuides(): string {
   const guides = toolRegistry.getUsageGuides();
   if (guides.length === 0) return "";
-  return "\n\n## 工具使用指南\n" + guides.join("\n\n");
+  return "\n\n工具使用指南\n" + guides.join("\n\n");
 }
 
 /**
@@ -29,10 +29,10 @@ function buildUsageGuides(): string {
 export function buildSystemPrompt(hint: PreClassifyHint | null): string {
   const toolList = buildToolList();
   const usageGuides = buildUsageGuides();
-  let prompt = PROMPT_CORE + "\n\n## 可用工具\n" + toolList + usageGuides + PROMPT_RULES;
+  let prompt = PROMPT_CORE + "\n\n可用工具\n" + toolList + usageGuides + PROMPT_RULES;
 
   if (hint) {
-    let hintText = `\n\n## 预分类提示\n规则匹配推测用户意图为 "${hint.intent}"`;
+    let hintText = `\n\n预分类提示\n规则匹配推测用户意图为 "${hint.intent}"`;
     if (hint.scene) {
       hintText += `，场景 "${hint.scene}"`;
     }

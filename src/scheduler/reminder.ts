@@ -16,7 +16,7 @@ export function checkReminders(userId: string, sendFn: SendFn): void {
     if (!entry.remindAt) continue;
     if (entry.remindAt > nowISO()) continue;
 
-    const message = `⏰ ${formatRemindAt(entry.remindAt)}：${entry.title}`;
+    const message = `提醒：${formatRemindAt(entry.remindAt)} — ${entry.title}`;
     sendFn(userId, message);
     markReminded(userId, entry.id);
 

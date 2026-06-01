@@ -38,18 +38,18 @@ export function checkDailySummary(userId: string, sendFn: SendFn): void {
 
   if (todayDeadlines.length === 0 && overdue.length === 0) return;
 
-  const parts: string[] = ["☀️ 今日汇总"];
+  const parts: string[] = ["今日汇总"];
 
   if (todayDeadlines.length > 0) {
-    parts.push("\n📅 今日待办：");
-    todayDeadlines.forEach((e) => parts.push(`  ⬜ ${e.title}`));
+    parts.push("\n今日待办：");
+    todayDeadlines.forEach((e) => parts.push(`  [待办] ${e.title}`));
   }
 
   if (overdue.length > 0) {
-    parts.push("\n⚠️ 已过期：");
+    parts.push("\n已过期：");
     overdue.slice(0, 5).forEach((e) => {
       const days = daysBetween(e.deadline!.slice(0, 10), today);
-      parts.push(`  ❗ ${e.title}（${days}天前）`);
+      parts.push(`  [过期] ${e.title}（${days}天前）`);
     });
   }
 

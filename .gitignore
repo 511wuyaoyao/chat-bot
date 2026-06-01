@@ -4,3 +4,6 @@ dist/
 data/
 *.log
 .DS_Store
+NapCat.Shell.Windows.OneKey/
+chi_sim.traineddata
+eng.traineddata
