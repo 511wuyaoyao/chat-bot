@@ -5,6 +5,7 @@
 import { validateConfig, config } from "./config";
 import "./tools";
 import { QqAdapter, QqMessage } from "./qq/adapter";
+import { HeartbeatManager } from "./qq/heartbeat";
 import { routeMessage } from "./router/message-router";
 import { start as startChecker, stopAll as stopAllCheckers } from "./tools/schedule_tools/schedule_engine/checker";
 import { addSchedule, getSchedule } from "./tools/schedule_tools/schedule_engine/schedule-engine";
@@ -12,9 +13,10 @@ import { agentLoop } from "./agent/agent-loop";
 import { create } from "./router/session/create";
 import { FALLBACK_API_ERROR, PROACTIVE_MESSAGE } from "./messages";
 import { nowLocal } from "./utils/time-utils";
-import { logger } from "./utils/logger";
+import { logger, cleanOldLogs } from "./utils/logger";
 
 async function main() {
+  await cleanOldLogs();
   logger.info("QQ 个人管家 Bot 启动中...");
 
   const errors = validateConfig();
@@ -55,22 +57,8 @@ async function main() {
   adapter.start();
 
   // 心跳保活：定时给自己发消息，防止 NapCat↔QQ 空闲断连
-  const heartbeatMin = config.qq.heartbeatMinutes;
-  const selfId = config.qq.selfId;
-  if (heartbeatMin > 0 && selfId) {
-    const HB_MSG = "​"; // 零宽空格，不可见
-    setInterval(async () => {
-      try {
-        await adapter.sendMessage("private", selfId, HB_MSG);
-        logger.debug("心跳已发送");
-      } catch {
-        // 心跳失败忽略
-      }
-    }, heartbeatMin * 60_000);
-    logger.info(`心跳保活已启用，间隔 ${heartbeatMin} 分钟`);
-  } else if (!selfId) {
-    logger.warn("未配置 QQ_SELF_ID，心跳保活未启用");
-  }
+  const heartbeat = new HeartbeatManager(adapter);
+  heartbeat.start();
 
   for (const userId of config.qq.whitelist) {
     const checkerSid = `${userId}_checker`;
@@ -109,6 +97,7 @@ async function main() {
 
   const shutdown = () => {
     logger.info("正在关闭...");
+    heartbeat.stop();
     stopAllCheckers();
     adapter.stop();
     process.exit(0);

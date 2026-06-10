@@ -51,16 +51,31 @@ export class QqAdapter {
       napcatConnected = true;
       logger.info("NapCat WebSocket 已连接");
 
-      // 保活 ping：每 30s 发一次，检测死连接
+      // 保活 ping + 动态状态行（每 5 秒原地刷新）
+      const pingMs = config.qq.wsPingIntervalSeconds * 1000;
+      let pingTotal = 0;
+      let pongTotal = 0;
+      let pingRecent = 0;
+      let pongRecent = 0;
+
       const pingTimer = setInterval(() => {
         if (ws.readyState === ws.OPEN) {
-          logger.debug("WS ping → NapCat");
+          pingTotal++;
+          pingRecent++;
           ws.ping();
         }
-      }, 30_000);
+      }, pingMs);
+
+      const statusTimer = setInterval(() => {
+        const now = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        process.stdout.write(`\r\x1b[K\x1b[90m[WS] 累计 ping ${pingTotal} / pong ${pongTotal}  最近 5 秒 ping ${pingRecent} / pong ${pongRecent}  ${now}\x1b[0m`);
+        pingRecent = 0;
+        pongRecent = 0;
+      }, 5000);
 
       ws.on("pong", () => {
-        logger.debug("WS pong ← NapCat");
+        pongTotal++;
+        pongRecent++;
       });
 
       ws.on("message", async (data) => {
@@ -75,12 +90,14 @@ export class QqAdapter {
 
       ws.on("close", () => {
         clearInterval(pingTimer);
+        clearInterval(statusTimer);
         napcatConnected = false;
         logger.warn("!!! NapCat WebSocket 断开 !!! — QQ 消息收发已中断，请检查 NapCatQQ 是否仍在运行");
       });
 
       ws.on("error", (err) => {
         clearInterval(pingTimer);
+        clearInterval(statusTimer);
         logger.error("WebSocket 错误", { error: err.message });
       });
     });

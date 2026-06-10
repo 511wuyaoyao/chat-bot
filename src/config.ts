@@ -19,7 +19,10 @@ export const config = {
       .filter(Boolean),
     port: parseInt(process.env.PORT || "3456", 10),
     napcatToken: process.env.NAPCAT_TOKEN || "",
-    heartbeatMinutes: parseInt(process.env.HEARTBEAT_MINUTES || "120", 10),
+    heartbeatMinutes: parseInt(process.env.HEARTBEAT_MINUTES || "15", 10),
+    heartbeatFailThreshold: parseInt(process.env.HEARTBEAT_FAIL_THRESHOLD || "3", 10),
+    wsPingIntervalSeconds: parseInt(process.env.WS_PING_INTERVAL_SECONDS || "30", 10),
+    wsPingSummaryMinutes: parseInt(process.env.WS_PING_SUMMARY_MINUTES || "5", 10),
     selfId: process.env.QQ_SELF_ID || "",
   },
   agent: {
@@ -27,6 +30,11 @@ export const config = {
     maxToolResultChars: parseInt(process.env.AGENT_TOOL_RESULT_MAX_CHARS || "1500", 10),
     temperature: parseFloat(process.env.AGENT_TEMPERATURE || "0.3"),
     maxTokens: parseInt(process.env.AGENT_MAX_TOKENS || "1024"),
+  },
+  log: {
+    dir: process.env.LOG_DIR || "data/logs",
+    retentionDays: parseInt(process.env.LOG_RETENTION_DAYS || "30", 10),
+    fileEnabled: process.env.LOG_FILE_ENABLED !== "false",
   },
 };
 
