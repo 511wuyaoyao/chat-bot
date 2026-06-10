@@ -30,10 +30,21 @@ export function daysBetween(a: string, b: string): number {
 
 /** 获取今天的日期字符串 YYYY-MM-DD */
 export function todayStr(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/** 获取当前 ISO 字符串 */
+/** 获取本地时间字符串 YYYY-MM-DD HH:MM */
+export function nowLocal(d?: Date): string {
+  const t = d || new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+}
+
+/** 获取当前本地时间字符串 YYYY-MM-DD HH:MM:SS */
 export function nowISO(): string {
-  return new Date().toISOString().replace("T", " ").slice(0, 19);
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }

@@ -1,44 +1,51 @@
 /**
  * 消息路由主入口
- * 编排完整处理流程：上下文记录 → 预分类 → Agent Loop（含工具调用）
+ * 指令拦截 → agent loop
  */
 
-import { config } from "../config";
 import { QqMessage } from "../qq/adapter";
-import { pushContext, getContext } from "./context-manager";
-import { preClassify } from "./pre-classify";
 import { agentLoop, ProgressCallback } from "../agent/agent-loop";
 import { logger } from "../utils/logger";
+import { commandRegistry } from "./commands/registry";
+import { create } from "./session/create";
 
-/** 处理收到的 QQ 消息，返回回复文本 */
+import "./commands/help";
+import "./commands/start";
+
+const userSession = new Map<string, string>(); // userId → sessionId
+
+function sessionId(userId: string): string {
+  let sid = userSession.get(userId);
+  if (!sid) {
+    sid = `${userId}_${Date.now()}`;
+    userSession.set(userId, sid);
+    create(sid, userId);
+  }
+  return sid;
+}
+
+/** 切换会话（供 /start /new 指令使用） */
+export function switchSession(userId: string, sid: string): void {
+  userSession.set(userId, sid);
+}
+
 export async function routeMessage(
   msg: QqMessage,
   onProgress?: ProgressCallback
 ): Promise<string | null> {
   const userId = String(msg.user_id);
-  const text = msg.raw_message.trim();
+  const raw = msg.raw_message;
 
-  if (!text) return null;
+  if (!raw) return null;
 
-  // 1. 记录用户消息到上下文
-  pushContext(userId, "user", text);
-
-  // 2. 规则预分类（根据配置开关）
-  const hint = config.features.enableRegexPreClassify ? preClassify(text) : null;
-  if (hint) {
-    logger.debug(`预分类结果`, { hint, text });
+  // 指令匹配
+  const cmd = commandRegistry.match(raw);
+  if (cmd) {
+    logger.debug("指令执行", { userId, command: cmd.handler.name });
+    return cmd.handler.execute(userId, cmd.args);
   }
 
-  // 3. 获取上下文
-  const context = getContext(userId);
-
-  // 4. Agent Loop：AI 自主决定调用哪些工具
-  const reply = await agentLoop(userId, text, context, hint, onProgress);
-
-  // 5. 记录 Bot 回复到上下文
-  if (reply) {
-    pushContext(userId, "assistant", reply);
-  }
-
-  return reply;
+  // Agent Loop
+  const sid = sessionId(userId);
+  return agentLoop(sid, userId, raw.trim(), onProgress);
 }

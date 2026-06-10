@@ -57,11 +57,13 @@ class ToolRegistry {
     return tool.execute(args, userId);
   }
 
-  /** 获取所有工具的使用指南（过滤掉没有 usageGuide 的） */
+  /** 获取所有工具的使用指南（过滤掉没有 usageGuide 的，去重） */
   getUsageGuides(): string[] {
+    const seen = new Set<string>();
     const guides: string[] = [];
     for (const [, tool] of this.tools) {
-      if (tool.usageGuide) {
+      if (tool.usageGuide && !seen.has(tool.usageGuide)) {
+        seen.add(tool.usageGuide);
         guides.push(tool.usageGuide);
       }
     }

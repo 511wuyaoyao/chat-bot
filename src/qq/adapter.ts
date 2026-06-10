@@ -42,14 +42,26 @@ export class QqAdapter {
   }
 
   start(): void {
-    // HTTP 服务（health check）
-    // WebSocket 服务端：NapCat 主动连接过来推送事件
     this.server = http.createServer(this.app);
-
     this.wss = new WebSocketServer({ server: this.server, path: "/ws" });
 
+    let napcatConnected = false;
+
     this.wss.on("connection", (ws: WebSocket) => {
-      logger.info("NapCat WebSocket 客户端已连接");
+      napcatConnected = true;
+      logger.info("NapCat WebSocket 已连接");
+
+      // 保活 ping：每 30s 发一次，检测死连接
+      const pingTimer = setInterval(() => {
+        if (ws.readyState === ws.OPEN) {
+          logger.debug("WS ping → NapCat");
+          ws.ping();
+        }
+      }, 30_000);
+
+      ws.on("pong", () => {
+        logger.debug("WS pong ← NapCat");
+      });
 
       ws.on("message", async (data) => {
         const raw = data.toString();
@@ -62,17 +74,28 @@ export class QqAdapter {
       });
 
       ws.on("close", () => {
-        logger.warn("NapCat WebSocket 客户端断开");
+        clearInterval(pingTimer);
+        napcatConnected = false;
+        logger.warn("!!! NapCat WebSocket 断开 !!! — QQ 消息收发已中断，请检查 NapCatQQ 是否仍在运行");
       });
 
       ws.on("error", (err) => {
+        clearInterval(pingTimer);
         logger.error("WebSocket 错误", { error: err.message });
       });
     });
 
     this.server.listen(config.qq.port, () => {
       logger.info(`QQ 适配器已启动，监听端口 ${config.qq.port}`);
-      logger.info(`NapCat 反向 WS 地址: ws://127.0.0.1:${config.qq.port}/ws`);
+      logger.info(`等待 NapCat 反向 WS 连接: ws://127.0.0.1:${config.qq.port}/ws`);
+
+      // 10 秒后仍未连接 → 警告
+      setTimeout(() => {
+        if (!napcatConnected) {
+          logger.warn("!!! NapCat 未连接 !!! — 启动 10 秒后仍未收到 NapCat WebSocket 连接");
+          logger.warn("请检查：1) NapCatQQ 是否已启动  2) NapCat 网络配置中 WebSocket 客户端地址是否正确");
+        }
+      }, 10_000);
     });
   }
 
@@ -134,7 +157,10 @@ export class QqAdapter {
       logger.info(`消息已发送`, { type, user_id: userId, message_id: messageId });
       return messageId;
     } catch (err) {
-      logger.error("发送消息失败", { error: String(err) });
+      const reason = (err as NodeJS.ErrnoException).code === "ECONNREFUSED"
+        ? `NapCat HTTP API 不可达 (${napcatUrl})，请确认 NapCatQQ 已启动且 HTTP 服务端口正确`
+        : `发送消息失败：${String(err)}`;
+      logger.error(reason);
       return null;
     }
   }

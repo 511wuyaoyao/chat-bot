@@ -19,13 +19,14 @@ export const config = {
       .filter(Boolean),
     port: parseInt(process.env.PORT || "3456", 10),
     napcatToken: process.env.NAPCAT_TOKEN || "",
-  },
-  features: {
-    enableRegexPreClassify: process.env.ENABLE_REGEX_PRE_CLASSIFY !== "false",
+    heartbeatMinutes: parseInt(process.env.HEARTBEAT_MINUTES || "120", 10),
+    selfId: process.env.QQ_SELF_ID || "",
   },
   agent: {
     maxIterations: parseInt(process.env.AGENT_MAX_ITERATIONS || "5", 10),
     maxToolResultChars: parseInt(process.env.AGENT_TOOL_RESULT_MAX_CHARS || "1500", 10),
+    temperature: parseFloat(process.env.AGENT_TEMPERATURE || "0.3"),
+    maxTokens: parseInt(process.env.AGENT_MAX_TOKENS || "1024"),
   },
 };
 

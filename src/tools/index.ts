@@ -1,12 +1,18 @@
 /**
  * 工具集入口
- * 导入所有工具文件以触发 toolRegistry.register() 自注册
  */
 
-import "./create-entry";
-import "./query-entries";
-import "./update-entry";
-import "./delete-entry";
-import "./recommend-items";
-import "./folder-tree";
+import "./data_tools/create-entry";
+import "./data_tools/update-entry";
+import "./data_tools/delete-entry";
+import "./data_tools/delete-file";
+import "./data_tools/create-folder";
+import "./data_tools/delete-folder";
+import "./data_tools/update-folder";
+import "./data_tools/folder-tree";
+import "./data_tools/get-entry";
+import "./schedule_tools/add-schedule";
+import "./schedule_tools/update-schedule";
+import "./schedule_tools/delete-schedule";
+import "./schedule_tools/query-schedules";
 import "./web-search";

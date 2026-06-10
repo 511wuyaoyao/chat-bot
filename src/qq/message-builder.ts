@@ -3,7 +3,7 @@
  * 统一管理回复消息的格式，Claude Code 风格：纯文本，无 emoji，无 markdown
  */
 
-import { EntryIndex } from "../data/index-types";
+import { TrackableEntry } from "../tools/data_tools/data_engine/entities";
 
 /** 状态字符到文字标签的映射 */
 const STATUS_LABEL: Record<string, string> = {
@@ -21,7 +21,7 @@ export function buildCreateConfirm(title: string, folderPath: string, fileName: 
 }
 
 /** 查询结果 — 单条详情 */
-export function buildEntryDetail(entry: EntryIndex): string {
+export function buildEntryDetail(entry: TrackableEntry): string {
   const status = STATUS_LABEL[entry.statusChar] || "待办";
   const parts = [`[${status}] ${entry.title}`];
   if (entry.url) parts.push(`链接：${entry.url}`);
@@ -33,7 +33,7 @@ export function buildEntryDetail(entry: EntryIndex): string {
 }
 
 /** 查询结果 — 列表 */
-export function buildEntryList(entries: EntryIndex[]): string {
+export function buildEntryList(entries: TrackableEntry[]): string {
   return entries
     .map((e) => {
       const status = STATUS_LABEL[e.statusChar] || "待办";
@@ -73,8 +73,8 @@ export function buildExpiryNotice(title: string, overdueDays: number): string {
 
 /** 每日汇总 */
 export function buildDailySummary(
-  todayDeadlines: EntryIndex[],
-  overdue: EntryIndex[]
+  todayDeadlines: TrackableEntry[],
+  overdue: TrackableEntry[]
 ): string {
   const parts: string[] = ["今日汇总"];
 

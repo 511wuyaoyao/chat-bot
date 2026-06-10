@@ -3,6 +3,9 @@
  * 带颜色标记、时间戳和日志级别过滤
  */
 
+import dotenv from "dotenv";
+dotenv.config();
+
 type LogLevel = "info" | "warn" | "error" | "debug";
 
 const LOG_LEVELS: Record<LogLevel, number> = {
