@@ -31,6 +31,13 @@ export const config = {
     temperature: parseFloat(process.env.AGENT_TEMPERATURE || "0.3"),
     maxTokens: parseInt(process.env.AGENT_MAX_TOKENS || "1024"),
   },
+  /** 执行 Agent 独立参数，不配置则回退到 agent 默认值 */
+  exec: {
+    model: process.env.EXEC_MODEL || "",
+    temperature: parseFloat(process.env.EXEC_TEMPERATURE || "0"),
+    maxTokens: parseInt(process.env.EXEC_MAX_TOKENS || "0"),
+    maxIterations: parseInt(process.env.EXEC_MAX_ITERATIONS || "8"),
+  },
   log: {
     dir: process.env.LOG_DIR || "data/logs",
     retentionDays: parseInt(process.env.LOG_RETENTION_DAYS || "30", 10),

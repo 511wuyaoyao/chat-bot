@@ -16,3 +16,5 @@ import "./schedule_tools/update-schedule";
 import "./schedule_tools/delete-schedule";
 import "./schedule_tools/query-schedules";
 import "./web-search";
+import "./topic_tools/push-topic";
+import "./topic_tools/ask-user";

@@ -3,7 +3,7 @@
  * 调 file-engine.scanTree 获取用户数据目录树，30 秒缓存
  */
 
-import { scanTree } from "../../../src/tools/data_tools/data_engine/file-engine";
+import { scanTree } from "../../tools/data_tools/data_engine/file-engine";
 
 interface CacheEntry {
   tree: string;

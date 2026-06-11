@@ -7,34 +7,28 @@
 import { StoredMessage } from "./utils/types";
 import { getCache } from "./set";
 import { buildSystemPrompt } from "./utils/system-prompt";
-import { buildTreeContext } from "./utils/tree-context";
+import { buildAttention } from "../../agent/attention/index";
 
-/** 获取完整上下文窗口数组 */
-export function get(sessionId: string, userId: string): StoredMessage[] {
-  const history = getCache(sessionId);
-  const systemContent = buildSystemPrompt();
-  const attention = buildAttention(userId);
+/** 获取完整上下文窗口数组。baseDir 仅 agentLoop 内部使用 */
+export function get(
+  sessionId: string,
+  userId: string,
+  opts?: { systemPrompt?: string; skipAttention?: boolean; baseDir?: string }
+): StoredMessage[] {
+  const history = getCache(sessionId, opts?.baseDir);
+  const systemContent = opts?.systemPrompt ?? buildSystemPrompt();
 
   const result: StoredMessage[] = [
     { role: "system", content: systemContent },
     ...history,
   ];
-  if (attention) result.push(attention);
+
+  if (!opts?.skipAttention) {
+    const attentionText = buildAttention(userId, sessionId);
+    if (attentionText) {
+      result.push({ role: "assistant", content: attentionText });
+    }
+  }
 
   return result;
-}
-
-/** 动态构建注意力消息（目录树 + 时间） */
-function buildAttention(userId: string): StoredMessage | null {
-  const tree = buildTreeContext(userId);
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const dateStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-
-  const parts: string[] = [];
-  if (tree) parts.push(tree);
-  parts.push(`当前时间：${dateStr} ${timeStr}`);
-
-  return { role: "assistant", content: parts.join("\n\n") };
 }

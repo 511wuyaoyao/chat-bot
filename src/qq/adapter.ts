@@ -9,7 +9,7 @@ import { WebSocketServer } from "ws";
 import type { WebSocket } from "ws";
 import { config } from "../config";
 import { logger } from "../utils/logger";
-import { routeMessage } from "../router/message-router";
+import { WsPing } from "./connection";
 
 /** OneBot v11 消息事件 */
 export interface QqMessage {
@@ -21,10 +21,18 @@ export interface QqMessage {
   sender: {
     nickname: string;
   };
+  /** 引用回复的消息（OneBot v11 reply 字段），用户引用某条消息时存在 */
+  reply?: {
+    message_id: number;
+    user_id: number;
+    raw_message: string;
+  } | null;
 }
 
 export interface QqAdapterOptions {
   onMessage: (msg: QqMessage) => Promise<string | null>;
+  /** 用户撤回消息时回调，传入被撤回的 message_id */
+  onRecall?: (messageId: number) => void;
 }
 
 const napcatUrl = process.env.NAPCAT_BASE_URL || "http://127.0.0.1:3000";
@@ -51,32 +59,9 @@ export class QqAdapter {
       napcatConnected = true;
       logger.info("NapCat WebSocket 已连接");
 
-      // 保活 ping + 动态状态行（每 5 秒原地刷新）
-      const pingMs = config.qq.wsPingIntervalSeconds * 1000;
-      let pingTotal = 0;
-      let pongTotal = 0;
-      let pingRecent = 0;
-      let pongRecent = 0;
-
-      const pingTimer = setInterval(() => {
-        if (ws.readyState === ws.OPEN) {
-          pingTotal++;
-          pingRecent++;
-          ws.ping();
-        }
-      }, pingMs);
-
-      const statusTimer = setInterval(() => {
-        const now = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-        process.stdout.write(`\r\x1b[K\x1b[90m[WS] 累计 ping ${pingTotal} / pong ${pongTotal}  最近 5 秒 ping ${pingRecent} / pong ${pongRecent}  ${now}\x1b[0m`);
-        pingRecent = 0;
-        pongRecent = 0;
-      }, 5000);
-
-      ws.on("pong", () => {
-        pongTotal++;
-        pongRecent++;
-      });
+      // 保活 ping
+      const wsPing = new WsPing(ws);
+      wsPing.start();
 
       ws.on("message", async (data) => {
         const raw = data.toString();
@@ -89,15 +74,13 @@ export class QqAdapter {
       });
 
       ws.on("close", () => {
-        clearInterval(pingTimer);
-        clearInterval(statusTimer);
+        wsPing.stop();
         napcatConnected = false;
         logger.warn("!!! NapCat WebSocket 断开 !!! — QQ 消息收发已中断，请检查 NapCatQQ 是否仍在运行");
       });
 
       ws.on("error", (err) => {
-        clearInterval(pingTimer);
-        clearInterval(statusTimer);
+        wsPing.stop();
         logger.error("WebSocket 错误", { error: err.message });
       });
     });
@@ -117,12 +100,35 @@ export class QqAdapter {
   }
 
   private async handleEvent(event: Record<string, unknown>) {
+    // 撤回事件
+    if (event.post_type === "notice") {
+      const noticeType = event.notice_type as string;
+      if (noticeType === "friend_recall" || noticeType === "group_recall") {
+        const messageId = event.message_id as number;
+        if (messageId) {
+          logger.debug(`用户撤回消息`, { message_id: messageId });
+          this.options.onRecall?.(messageId);
+        }
+      }
+      return;
+    }
+
     if (event.post_type !== "message") return;
 
     // 过滤掉 Bot 自己发的 / API 响应等
     if (event.message_type !== "private" && event.message_type !== "group") return;
 
-    const msg = event as unknown as QqMessage;
+    // 规范化 reply 字段：OneBot v11 的 reply.sender.user_id → reply.user_id
+    const rawReply = event.reply as Record<string, unknown> | undefined;
+    const normalizedReply = rawReply
+      ? {
+          message_id: rawReply.message_id as number,
+          user_id: (rawReply.sender as Record<string, unknown>)?.user_id as number,
+          raw_message: rawReply.raw_message as string,
+        }
+      : null;
+
+    const msg: QqMessage = { ...(event as unknown as QqMessage), reply: normalizedReply };
     const userId = String(msg.user_id);
 
     if (!config.qq.whitelist.includes(userId)) {
@@ -132,7 +138,12 @@ export class QqAdapter {
 
     if (!msg.raw_message?.trim()) return;
 
-    logger.info(`收到消息`, { user_id: userId, message_id: msg.message_id, text: msg.raw_message?.substring(0, 50) });
+    logger.info(`收到消息`, {
+      user_id: userId,
+      message_id: msg.message_id,
+      text: msg.raw_message?.substring(0, 50),
+      ...(msg.reply ? { reply_to: msg.reply.message_id, reply_user: msg.reply.user_id } : {}),
+    });
 
     try {
       const reply = await this.options.onMessage(msg);

@@ -1,32 +1,35 @@
 /**
- * 上下文写入 + 会话生命周期
- * context.json: 全部消息（user / assistant / tool）
- * archive.jsonl: 全部消息（结构化归档）
+ * Session 上下文写入 — 只操作 context.json
+ * archive 写入由独立的 router/archive 模块负责
  */
 
 import fs from "fs";
 import path from "path";
 import { sessionDir, ensureDir } from "./utils/storage";
 import { StoredMessage } from "./utils/types";
-import * as archive from "./archive/archive-store";
 import { logger } from "../../utils/logger";
 
 // ====== 内存缓存 ======
 
 const cache = new Map<string, StoredMessage[]>();
 
-export function getCache(sessionId: string): StoredMessage[] {
-  if (!cache.has(sessionId)) {
-    cache.set(sessionId, load(sessionId));
+function cacheKey(sessionId: string, baseDir?: string): string {
+  return baseDir ? `${baseDir}::${sessionId}` : sessionId;
+}
+
+export function getCache(sessionId: string, baseDir?: string): StoredMessage[] {
+  const key = cacheKey(sessionId, baseDir);
+  if (!cache.has(key)) {
+    cache.set(key, load(sessionId, baseDir));
   }
-  return cache.get(sessionId)!;
+  return cache.get(key)!;
 }
 
 // ====== 磁盘读写 ======
 
-function load(sessionId: string): StoredMessage[] {
+function load(sessionId: string, baseDir?: string): StoredMessage[] {
   try {
-    const fp = path.join(sessionDir(sessionId), "context.json");
+    const fp = path.join(sessionDir(sessionId, baseDir), "context.json");
     if (!fs.existsSync(fp)) return [];
     const data = JSON.parse(fs.readFileSync(fp, "utf-8"));
     return Array.isArray(data) ? data : [];
@@ -36,11 +39,11 @@ function load(sessionId: string): StoredMessage[] {
   }
 }
 
-function persist(sessionId: string, msgs: StoredMessage[]): void {
+function persist(sessionId: string, msgs: StoredMessage[], baseDir?: string): void {
   try {
-    ensureDir(sessionId);
+    ensureDir(sessionId, baseDir);
     fs.writeFileSync(
-      path.join(sessionDir(sessionId), "context.json"),
+      path.join(sessionDir(sessionId, baseDir), "context.json"),
       JSON.stringify(msgs, null, 2),
       "utf-8"
     );
@@ -51,10 +54,9 @@ function persist(sessionId: string, msgs: StoredMessage[]): void {
 
 // ====== 对外接口 ======
 
-/** 存入一条消息：全部进 context + archive */
-export function set(sessionId: string, userId: string, msg: StoredMessage): void {
-  const msgs = getCache(sessionId);
+/** 存入一条消息到 context.json。baseDir 仅 agentLoop 内部使用 */
+export function set(sessionId: string, msg: StoredMessage, baseDir?: string): void {
+  const msgs = getCache(sessionId, baseDir);
   msgs.push(msg);
-  archive.set(sessionId, msg);
-  persist(sessionId, msgs);
+  persist(sessionId, msgs, baseDir);
 }

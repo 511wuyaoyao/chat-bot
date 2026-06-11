@@ -1,18 +1,56 @@
-# agent 模块
+# agent
 
-通用 Agent 架构核心。基于 DeepSeek function calling 实现工具调用循环，AI 自主决定调用哪些工具、调用几次、根据结果调整。
+多 Agent 架构。通用循环引擎 + 三个独立 Agent，各选各的工具。
 
-## 文件
+## 架构
 
-- `agent-loop.ts` — Agent 主循环：组装消息 → 调 AI → 处理 tool_calls → 循环直到 AI 回复或达到上限
-- `tool-registry.ts` — 工具注册表：ToolDefinition / ToolHandler 类型，register / execute / getDefinitions 方法
-- `llm-client.ts` — 共享 OpenAI 客户端（懒加载单例），供 agent-loop 和 qa-fallback 共用
-- `system-prompt.ts` — Agent System Prompt 构建器：角色定义 + 工具列表（动态从 toolRegistry 注入）+ 分类指南 + 回复风格，支持预分类 hint 注入
-- `qa-fallback.ts` — 兜底 QA：仅在 API 完全失败或 max iterations 耗尽时调用，不使用工具
+```
+agent-loop.ts          ← 通用循环引擎（tools/prompt/model/params 可配置）
+tool-registry.ts       ← 全局工具目录（tools/ 下所有工具注册于此）
+llm-client.ts          ← 共享 OpenAI 客户端（懒加载单例）
+qa-fallback.ts         ← 兜底 QA（API 失败时使用）
+agent-tracker.ts       ← 消息归属追踪（供引用回复路由）
 
-## 设计原则
+agents/
+  main-agent/          ← 主 Agent（对话 + 路由）
+    index.ts           ←   入口 + 会话管理
+    tools.ts           ←   工具选单
+  exec-agent/          ← 执行 Agent（plan 执行）
+    index.ts
+    tools.ts
+  topic-agent/         ← 话题 Agent（静默提炼）
+    index.ts
 
-- **AI 自主决策**：不预设意图分发路径，AI 根据用户消息自行判断调用哪些工具
-- **工具结果驱动**：AI 看到工具返回结果后决定下一步（继续调工具 or 回复用户）
-- **循环上限保护**：最多 5 轮迭代（可配置），防止死循环
-- **优雅降级**：API 异常 → 重试 → qaFallback 兜底，保证用户总能收到回复
+attention/             ← 注意力层（长期记忆 → 本轮上下文注入）
+  index.ts             ←   组装入口
+  folder_tree.ts       ←   目录树上下文（30s 缓存）
+  time.ts              ←   当前时间
+  topic_queue.ts       ←   话题队列 CRUD（内存缓存 + 原子写入）
+```
+
+## 工具分配
+
+| Agent | 工具 |
+|---|---|
+| main-agent | web_search, get_entry, get_tree, schedule 全套, delegate |
+| exec-agent | web_search, get_entry, get_tree, schedule 全套 |
+| topic-agent | data 全套（读写）, push_topic, ask_user |
+
+## 调用链
+
+```
+router → mainAgent → agentLoop(tools: 主 Agent 选单, prompt: PROMPT_MAIN + attention)
+  mainAgent → delegate → execAgent → agentLoop(tools: exec 选单, session: 临时)
+  topic-agent 通过独立队列消费（不在此层触发）
+```
+
+## 权限边界
+
+```
+agent-loop ← 唯一拥有 session 权限（router/session/ set/get）
+main/topic/exec-agent ← 不碰 session，只传 sessionId 给 agentLoop
+
+Router 层（message-queue, message-router）
+  → 只读写 router/archive/（archive.jsonl）
+  → 禁止 import router/session/ 的 set/get（manage 除外）
+```

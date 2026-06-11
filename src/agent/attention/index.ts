@@ -12,7 +12,7 @@ import { folderTreeContext } from "./folder_tree";
 import { timeContext } from "./time";
 import { topicQueueText } from "./topic_queue";
 
-export function buildAttention(userId: string): string {
+export function buildAttention(userId: string, sessionId?: string): string {
   const parts: string[] = [];
 
   const tree = folderTreeContext(userId);
@@ -21,8 +21,10 @@ export function buildAttention(userId: string): string {
   const time = timeContext();
   if (time) parts.push(time);
 
-  const topics = topicQueueText(userId);
-  if (topics) parts.push(topics);
+  if (sessionId) {
+    const topics = topicQueueText(userId, sessionId);
+    if (topics) parts.push(topics);
+  }
 
   return parts.join("\n\n");
 }
