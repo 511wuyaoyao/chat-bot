@@ -39,8 +39,8 @@ attention/             ← 注意力层（长期记忆 → 本轮上下文注入
 ## 调用链
 
 ```
-router → mainAgent → agentLoop(tools: 主 Agent 选单, prompt: PROMPT_MAIN + attention)
-  mainAgent → delegate → execAgent → agentLoop(tools: exec 选单, session: 临时)
+router → mainAgent → agentLoop(tools: 主 Agent 选单, prompt: PROMPT_MAIN)
+  mainAgent → delegate → execAgent → agentLoop(tools: exec 选单, session: exec/context.json)
   topic-agent 通过独立队列消费（不在此层触发）
 ```
 
@@ -51,6 +51,6 @@ agent-loop ← 唯一拥有 session 权限（router/session/ set/get）
 main/topic/exec-agent ← 不碰 session，只传 sessionId 给 agentLoop
 
 Router 层（message-queue, message-router）
-  → 只读写 router/archive/（archive.jsonl）
+  → 只读写 router/archive/（archive.json）
   → 禁止 import router/session/ 的 set/get（manage 除外）
 ```

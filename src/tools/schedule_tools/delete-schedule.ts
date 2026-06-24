@@ -4,7 +4,7 @@
 
 import { toolRegistry } from "../../agent/tool-registry";
 import { removeSchedule } from "./schedule_engine/schedule-engine";
-import { TOOL_GUIDE_SCHEDULE } from "../../messages";
+import { TOOL_GUIDE_SCHEDULE } from "../../prompt";
 
 toolRegistry.register({
   usageGuide: TOOL_GUIDE_SCHEDULE,

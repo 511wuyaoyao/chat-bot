@@ -1,6 +1,7 @@
 /**
  * 会话存储路径工具
- * 路径：data/{userId}/session/{sessionId}
+ * 默认路径：data/{userId}/session/{sessionId}
+ * Agent 可通过 baseDir 写入 main/topic/exec 子目录。
  */
 
 import fs from "fs";

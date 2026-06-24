@@ -5,7 +5,7 @@
 import { toolRegistry } from "../../agent/tool-registry";
 import { addSchedule } from "./schedule_engine/schedule-engine";
 import { nowLocal } from "../../utils/time-utils";
-import { TOOL_GUIDE_SCHEDULE } from "../../messages";
+import { TOOL_GUIDE_SCHEDULE } from "../../prompt";
 
 toolRegistry.register({
   usageGuide: TOOL_GUIDE_SCHEDULE,

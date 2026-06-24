@@ -4,7 +4,7 @@
  */
 
 import { toolRegistry } from "../../../agent/tool-registry";
-import { PROMPT_CORE, PROMPT_DATA_MODEL, PROMPT_REMINDER_HANDLING, PROMPT_RULES, PROMPT_PROACTIVE_SYSTEM } from "../../../messages";
+import { PROMPT_CORE, PROMPT_DATA_MODEL, PROMPT_REMINDER_HANDLING, PROMPT_RULES, PROMPT_PROACTIVE_SYSTEM } from "../../../prompt";
 
 /** 构建可用工具列表（纯文本，不用 markdown） */
 function buildToolList(): string {

@@ -5,9 +5,23 @@
 
 import { QqMessage, QqAdapter } from "../qq/adapter";
 import { messageRouter } from "./message-router";
-import { getOrCreateSession } from "./session/manage";
+import { getOrCreateSession } from "./data-index";
 import { set as archiveSet } from "./archive/set";
+import { handleRecall } from "./recall";
 import { logger } from "../utils/logger";
+
+/** 记录 QQ message_id → sessionId，用于撤回时定位 */
+interface MessageRecord {
+  sessionId: string;
+}
+
+/** 已撤回的 message_id 集合，供 agentLoop 查询是否需要中止 */
+const recalledIds = new Set<number>();
+
+/** agentLoop 调用：检查当前处理的消息是否已被撤回 */
+export function isRecalled(messageId: number): boolean {
+  return recalledIds.has(messageId);
+}
 
 export class MessageQueue {
   private pending: QqMessage[] = [];
@@ -15,6 +29,8 @@ export class MessageQueue {
   private controller: AbortController | null = null;
   private currentMsg: QqMessage | null = null;
   private adapter: QqAdapter | null = null;
+  /** message_id → 会话记录 */
+  private messageMap = new Map<number, MessageRecord>();
 
   setAdapter(adapter: QqAdapter): void {
     this.adapter = adapter;
@@ -30,7 +46,11 @@ export class MessageQueue {
 
     // 入队即归档
     const uid = String(msg.user_id);
-    archiveSet(getOrCreateSession(uid), { role: "user", content: msg.raw_message });
+    const sid = getOrCreateSession(uid);
+    archiveSet(sid, { role: "user", content: msg.raw_message });
+
+    // 记录 message_id → session，供撤回使用
+    this.messageMap.set(msg.message_id, { sessionId: sid });
 
     if (msg.reply && this.controller) {
       logger.debug("收到引用回复，中断当前 Agent 处理");
@@ -43,12 +63,24 @@ export class MessageQueue {
     }
   }
 
-  recall(messageId: number): void {
+  recall(userId: string, messageId: number): void {
+    // 队列层职责：清理 pending + 中断当前
     this.pending = this.pending.filter((m) => m.message_id !== messageId);
+
     if (this.currentMsg?.message_id === messageId && this.controller) {
       logger.debug("当前处理的消息被撤回，终止回复");
       this.controller.abort();
     }
+
+    // 标记为已撤回，agentLoop 查询此集合决定是否中止
+    recalledIds.add(messageId);
+
+    // 存储层职责：委托 router 处理（归档撤回日志 + 删 session 上下文）
+    const record = this.messageMap.get(messageId);
+    const sid = record?.sessionId ?? getOrCreateSession(userId);
+    handleRecall(userId, sid, messageId);
+
+    this.messageMap.delete(messageId);
   }
 
   private async consume(): Promise<void> {

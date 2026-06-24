@@ -8,13 +8,13 @@
 - `message-router.ts` — 消息网关：指令拦截 → mainAgent → topic 入队
 - `commands/` — 指令层（以 / 开头），直接执行不经过 AI
 - `session/` — session 上下文持久化（context.json），供 Agent 层使用
-- `archive/` — 归档持久化（archive.jsonl），供 Router 层使用
+- `archive/` — 归档持久化（archive.json），供 Router 层使用
 
 ## 权限边界
 
 ```
 Router 层（message-queue, message-router）
-  → 只读写 router/archive/（archive.jsonl）
+  → 只读写 router/archive/（archive.json）
   → 禁止 import router/session/ 的 set/get（manage 除外）
 
 Agent 层（agent-loop）

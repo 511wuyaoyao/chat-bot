@@ -6,7 +6,7 @@
 import { getLlmClient } from "./llm-client";
 import { config } from "../config";
 import { logger } from "../utils/logger";
-import { QA_FALLBACK_PROMPT, FALLBACK_CANNOT_RESPOND } from "../messages";
+import { QA_FALLBACK_PROMPT, FALLBACK_CANNOT_RESPOND } from "../prompt";
 import { StoredMessage } from "../router/session/utils/types";
 
 export async function qaFallback(

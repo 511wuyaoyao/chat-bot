@@ -7,7 +7,7 @@ import { addEntry } from "./data_engine/file-engine";
 import { EntryData } from "./data_engine/entities";
 import { getStatusChar } from "./status-map";
 import { nowLocal } from "../../utils/time-utils";
-import { TOOL_GUIDE_ADD_ENTRY } from "../../messages";
+import { TOOL_GUIDE_ADD_ENTRY } from "../../prompt";
 
 toolRegistry.register({
   usageGuide: TOOL_GUIDE_ADD_ENTRY,

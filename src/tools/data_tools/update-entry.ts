@@ -8,7 +8,7 @@ import { toolRegistry, ToolHandler } from "../../agent/tool-registry";
 import { updateEntry } from "./data_engine/file-engine";
 import { EntryData } from "./data_engine/entities";
 import { getStatusChar } from "./status-map";
-import { TOOL_GUIDE_UPDATE_ENTRY } from "../../messages";
+import { TOOL_GUIDE_UPDATE_ENTRY } from "../../prompt";
 
 toolRegistry.register({
   usageGuide: TOOL_GUIDE_UPDATE_ENTRY,

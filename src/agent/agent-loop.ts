@@ -11,14 +11,15 @@ import { qaFallback } from "./qa-fallback";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 import { get } from "../router/session/get";
-import { set as sessionSet } from "../router/session/set";
+import { set as sessionSet, recallUserMessage } from "../router/session/set";
 import { StoredMessage } from "../router/session/utils/types";
 import { ensureDir } from "../router/session/utils/storage";
+import { isRecalled } from "../router/message-queue";
 import {
   TOOL_PROGRESS,
   FALLBACK_EMPTY_REPLY,
   FALLBACK_ALL_DONE,
-} from "../messages";
+} from "../prompt";
 
 export type ProgressCallback = (toolName: string, description: string) => void;
 
@@ -49,6 +50,8 @@ export async function agentLoop(
     persistToolCalls?: boolean;
     /** 覆写存储目录（用于 main/ topic/ 子目录场景），不传则使用默认 sessionDir(sessionId) */
     storageDir?: string;
+    /** 用户消息的 QQ message_id，用于撤回定位 */
+    messageId?: number;
   }
 ): Promise<string> {
   const client = getLlmClient();
@@ -62,7 +65,18 @@ export async function agentLoop(
   ensureDir(sessionId, baseDir);
 
   // 持久化用户消息，后续每轮从 session 取完整上下文
-  sessionSet(sessionId, { role: "user", content: text }, baseDir);
+  sessionSet(sessionId, { role: "user", content: text, message_id: opts?.messageId }, baseDir);
+
+  /** 检查当前消息是否已被撤回，若是则回滚并中止 */
+  function checkRecalled(): boolean {
+    if (opts?.messageId && isRecalled(opts.messageId)) {
+      recallUserMessage(sessionId, opts.messageId, baseDir);
+      return true;
+    }
+    return false;
+  }
+
+  if (checkRecalled()) return "";
 
   for (let i = 0; i < maxIterations; i++) {
     logger.debug(`Agent loop 第 ${i + 1}/${maxIterations} 轮`, { userId });
@@ -99,6 +113,7 @@ export async function agentLoop(
 
     // 无工具调用 → 持久化并返回最终回复
     if (!msg.tool_calls || msg.tool_calls.length === 0) {
+      if (checkRecalled()) return "";
       const reply = msg.content || FALLBACK_EMPTY_REPLY;
       if (opts?.persistToolCalls !== false) {
         const finalMsg = { ...msg, role: "assistant", content: reply } as unknown as StoredMessage;
@@ -108,6 +123,7 @@ export async function agentLoop(
     }
 
     // 工具调用 → 持久化 assistant 消息 + tool 结果，下一轮 get() 自然包含
+    if (checkRecalled()) return "";
     logger.debug(`AI 调用了 ${msg.tool_calls.length} 个工具`, {
       userId,
       tools: msg.tool_calls.map((t) => t.function.name),
@@ -120,19 +136,21 @@ export async function agentLoop(
 
     for (const tc of msg.tool_calls) {
       const toolName = tc.function.name;
-      const args = JSON.parse(tc.function.arguments);
-
-      const progressText = TOOL_PROGRESS[toolName];
-      if (onProgress && progressText) {
-        const detail = args.query || args.title || args.titleOrId || "";
-        onProgress(toolName, detail ? `${progressText} ${detail}` : progressText);
-      }
-
+      let args: Record<string, unknown> = {};
       let toolResult: unknown;
+
       try {
+        args = JSON.parse(tc.function.arguments || "{}");
+
+        const progressText = TOOL_PROGRESS[toolName];
+        if (onProgress && progressText) {
+          const detail = args.query || args.title || args.titleOrId || "";
+          onProgress(toolName, detail ? `${progressText} ${detail}` : progressText);
+        }
+
         toolResult = await execute(toolName, args);
       } catch (err) {
-        toolResult = { error: `工具执行出错：${String(err)}` };
+        toolResult = { error: `工具调用失败：${String(err)}` };
         logger.warn(`工具 ${toolName} 执行失败`, { error: String(err) });
       }
 

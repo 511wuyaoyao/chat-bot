@@ -9,7 +9,7 @@ import { start as startChecker, stopAll as stopAllCheckers } from "../tools/sche
 import { addSchedule, getSchedule } from "../tools/schedule_tools/schedule_engine/schedule-engine";
 import { nowLocal } from "../utils/time-utils";
 import { logger } from "../utils/logger";
-import { PROACTIVE_MESSAGE } from "../messages";
+import { PROACTIVE_MESSAGE } from "../prompt";
 import type { QqAdapter } from "../qq/adapter";
 
 const PROACTIVE_ID = "system_proactive";

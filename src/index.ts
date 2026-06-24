@@ -23,7 +23,7 @@ async function main() {
   const queue = new MessageQueue();
   const adapter = new QqAdapter({
     onMessage: (msg: QqMessage) => { queue.enqueue(msg); return Promise.resolve(null); },
-    onRecall: (id: number) => { queue.recall(id); },
+    onRecall: (uid: string, id: number) => { queue.recall(uid, id); },
   });
   queue.setAdapter(adapter);
 

@@ -5,8 +5,7 @@
 
 import express, { Request, Response } from "express";
 import http from "http";
-import { WebSocketServer } from "ws";
-import type { WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 import { config } from "../config";
 import { logger } from "../utils/logger";
 import { WsPing } from "./connection";
@@ -31,16 +30,27 @@ export interface QqMessage {
 
 export interface QqAdapterOptions {
   onMessage: (msg: QqMessage) => Promise<string | null>;
-  /** 用户撤回消息时回调，传入被撤回的 message_id */
-  onRecall?: (messageId: number) => void;
+  /** 用户撤回消息时回调，传入 user_id 和 被撤回的 message_id */
+  onRecall?: (userId: string, messageId: number) => void;
 }
 
 const napcatUrl = process.env.NAPCAT_BASE_URL || "http://127.0.0.1:3000";
+
+interface OneBotApiResponse {
+  status?: string;
+  retcode?: number;
+  message?: string;
+  wording?: string;
+  data?: {
+    message_id?: number;
+  } | null;
+}
 
 export class QqAdapter {
   private app = express();
   private server: http.Server | null = null;
   private wss: WebSocketServer | null = null;
+  private currentWs: WebSocket | null = null;
 
   constructor(private options: QqAdapterOptions) {
     this.app.use(express.json());
@@ -56,6 +66,11 @@ export class QqAdapter {
     let napcatConnected = false;
 
     this.wss.on("connection", (ws: WebSocket) => {
+      if (this.currentWs && this.currentWs.readyState === WebSocket.OPEN) {
+        logger.warn("收到新的 NapCat WebSocket 连接，关闭旧连接");
+        this.currentWs.close(1000, "new connection replaced old one");
+      }
+      this.currentWs = ws;
       napcatConnected = true;
       logger.info("NapCat WebSocket 已连接");
 
@@ -73,14 +88,19 @@ export class QqAdapter {
         }
       });
 
-      ws.on("close", () => {
+      ws.on("close", (code, reason) => {
         wsPing.stop();
-        napcatConnected = false;
-        logger.warn("!!! NapCat WebSocket 断开 !!! — QQ 消息收发已中断，请检查 NapCatQQ 是否仍在运行");
+        if (this.currentWs === ws) {
+          this.currentWs = null;
+          napcatConnected = false;
+        }
+        logger.warn("!!! NapCat WebSocket 断开 !!! — QQ 消息接收已中断，等待 NapCat 自动重连", {
+          code,
+          reason: reason.toString(),
+        });
       });
 
       ws.on("error", (err) => {
-        wsPing.stop();
         logger.error("WebSocket 错误", { error: err.message });
       });
     });
@@ -105,9 +125,10 @@ export class QqAdapter {
       const noticeType = event.notice_type as string;
       if (noticeType === "friend_recall" || noticeType === "group_recall") {
         const messageId = event.message_id as number;
+        const uid = String(event.user_id ?? "");
         if (messageId) {
-          logger.debug(`用户撤回消息`, { message_id: messageId });
-          this.options.onRecall?.(messageId);
+          logger.debug(`用户撤回消息`, { user_id: uid, message_id: messageId });
+          this.options.onRecall?.(uid, messageId);
         }
       }
       return;
@@ -180,15 +201,24 @@ export class QqAdapter {
       } else {
         return null;
       }
-      const parsed = JSON.parse(response);
+      const parsed = JSON.parse(response) as OneBotApiResponse;
+      const ok = parsed.status === "ok" || parsed.retcode === 0;
+      if (!ok) {
+        throw new Error(`NapCat API 返回失败：${response.substring(0, 300)}`);
+      }
+
       const messageId = parsed.data?.message_id || null;
+      if (!messageId) {
+        throw new Error(`NapCat API 未返回 message_id：${response.substring(0, 300)}`);
+      }
+
       logger.info(`消息已发送`, { type, user_id: userId, message_id: messageId });
       return messageId;
     } catch (err) {
       const reason = (err as NodeJS.ErrnoException).code === "ECONNREFUSED"
         ? `NapCat HTTP API 不可达 (${napcatUrl})，请确认 NapCatQQ 已启动且 HTTP 服务端口正确`
         : `发送消息失败：${String(err)}`;
-      logger.error(reason);
+      logger.error(reason, { type, user_id: userId });
       return null;
     }
   }
@@ -199,7 +229,7 @@ export class QqAdapter {
       const response = await this.httpPost(`${napcatUrl}/delete_msg`, {
         message_id: messageId,
       });
-      const parsed = JSON.parse(response);
+      const parsed = JSON.parse(response) as OneBotApiResponse;
       const ok = parsed.status === "ok" || parsed.retcode === 0;
       logger.debug(ok ? `消息已撤回: ${messageId}` : `撤回失败: ${messageId}`, { response: response.substring(0, 100) });
       return ok;
@@ -232,7 +262,16 @@ export class QqAdapter {
       const req = http.request(options, (res) => {
         let body = "";
         res.on("data", (chunk) => (body += chunk));
-        res.on("end", () => resolve(body));
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            reject(new Error(`HTTP ${res.statusCode}: ${body.substring(0, 300)}`));
+            return;
+          }
+          resolve(body);
+        });
+      });
+      req.setTimeout(15_000, () => {
+        req.destroy(new Error("NapCat HTTP API 请求超时"));
       });
       req.on("error", reject);
       req.write(data);

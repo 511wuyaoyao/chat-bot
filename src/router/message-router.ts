@@ -5,7 +5,7 @@
 
 import { QqMessage } from "../qq/adapter";
 import { mainAgent } from "../agent/agents/main-agent/index";
-import { getOrCreateSession, switchSession } from "./session/manage";
+import { getOrCreateSession, switchSession } from "./data-index";
 import { enqueueDialogue } from "../agent/agents/topic-agent/queue";
 import { ProgressCallback } from "../agent/agent-loop";
 import { set as archiveSet } from "./archive/set";
@@ -14,6 +14,7 @@ import { commandRegistry } from "./commands/registry";
 
 import "./commands/help";
 import "./commands/start";
+import "./commands/topic";
 
 // 向后兼容
 export { getOrCreateSession };
@@ -39,7 +40,7 @@ export async function messageRouter(
   }
 
   // 正常对话 → 主 Agent
-  const reply = await mainAgent(sid, userId, raw.trim(), onProgress);
+  const reply = await mainAgent(sid, userId, raw.trim(), onProgress, msg.message_id);
 
   // 归档 assistant 回复（user 消息已在 message-queue 入队时归档）
   if (reply) {

@@ -13,9 +13,8 @@ export function get(sessionId: string): StoredMessage[] {
   try {
     const fp = path.join(archiveDir(sessionId), "archive.json");
     if (!fs.existsSync(fp)) return [];
-    const raw = fs.readFileSync(fp, "utf-8").trim();
-    if (!raw) return [];
-    return raw.split("\n").map((line) => JSON.parse(line));
+    const data = JSON.parse(fs.readFileSync(fp, "utf-8"));
+    return Array.isArray(data) ? data : [];
   } catch (err) {
     logger.warn("归档读取失败", { sessionId, error: String(err) });
     return [];

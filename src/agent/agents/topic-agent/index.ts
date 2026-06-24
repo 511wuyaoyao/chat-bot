@@ -7,16 +7,27 @@
 
 import path from "path";
 import { agentLoop } from "../../agent-loop";
-import { pushTopic } from "../../attention/topic_queue";
+import { pushTopic, getAllTopics, TopicEntry } from "../../attention/topic_queue";
 import { toolRegistry, ToolDefinition } from "../../tool-registry";
 import { logger } from "../../../utils/logger";
-import { PROMPT_TOPIC } from "../../../messages";
+import { PROMPT_TOPIC } from "../../../prompt";
 import type { DialogueItem } from "./queue";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
-/** Topic Agent 只需要 push_topic */
-const SELECTED = ["push_topic"];
+/** Topic Agent 工具：话题 + 知识库读写 */
+const SELECTED = [
+  "push_topic",
+  "get_tree",
+  "get_entry",
+  "add_entry",
+  "update_entry",
+  "delete_entry",
+  "create_folder",
+  "update_folder",
+  "delete_folder",
+  "delete_file",
+];
 
 function getTopicTools(): ToolDefinition[] {
   return SELECTED.map((name) => {
@@ -24,6 +35,19 @@ function getTopicTools(): ToolDefinition[] {
     if (!def) throw new Error(`Topic Agent 选用了未注册的工具: ${name}`);
     return def;
   });
+}
+
+/** 格式化话题列表用于注入 prompt */
+function formatTopics(topics: TopicEntry[]): string {
+  if (topics.length === 0) return "（暂无追踪话题）";
+  return topics.map((t) =>
+    `- ${t.topic} [${t.persist}] ${t.createdAt} | ${t.summary}`
+  ).join("\n");
+}
+
+function buildPrompt(userId: string, mainSessionId: string): string {
+  const topics = getAllTopics(userId, mainSessionId);
+  return PROMPT_TOPIC.replace("{topics}", formatTopics(topics));
 }
 
 export async function topicAgent(
@@ -39,7 +63,7 @@ export async function topicAgent(
     const storageDir = path.join(DATA_ROOT, userId, "session", mainSessionId, "topic");
 
     await agentLoop(sessionId, userId, text, undefined, {
-      systemPrompt: PROMPT_TOPIC,
+      systemPrompt: buildPrompt(userId, mainSessionId),
       tools: getTopicTools(),
       storageDir,
       executeTool: async (name, args) => {

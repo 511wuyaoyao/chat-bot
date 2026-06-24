@@ -4,9 +4,10 @@
 
 import { commandRegistry } from "./registry";
 import { switchSession } from "../message-router";
+import { createSessionId } from "../data-index";
 
 const handler = async (userId: string) => {
-  const sid = `${userId}_${Date.now()}`;
+  const sid = createSessionId(userId);
   switchSession(userId, sid);
   return "已创建新对话，旧对话已保留。";
 };

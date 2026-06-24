@@ -54,9 +54,38 @@ function persist(sessionId: string, msgs: StoredMessage[], baseDir?: string): vo
 
 // ====== 对外接口 ======
 
-/** 存入一条消息到 context.json。baseDir 仅 agentLoop 内部使用 */
+let _idSeq = 0;
+
+/** 存入一条消息到 context.json。自动注入 id + timestamp。baseDir 仅 agentLoop 内部使用 */
 export function set(sessionId: string, msg: StoredMessage, baseDir?: string): void {
   const msgs = getCache(sessionId, baseDir);
-  msgs.push(msg);
+  const enriched: StoredMessage = {
+    ...msg,
+    id: msg.id || `${Date.now()}_${++_idSeq}`,
+    timestamp: msg.timestamp || Date.now(),
+  };
+  msgs.push(enriched);
   persist(sessionId, msgs, baseDir);
+}
+
+/** 撤回：按 message_id 删除整轮对话（user + 后续所有 assistant/tool/system，直到下一条 user） */
+export function recallUserMessage(
+  sessionId: string,
+  messageId: number,
+  baseDir?: string
+): boolean {
+  const msgs = getCache(sessionId, baseDir);
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === "user" && msgs[i].message_id === messageId) {
+      // 计算要删除的范围：从当前 user 到下一个 user 之前（或到末尾）
+      let end = i + 1;
+      while (end < msgs.length && msgs[end].role !== "user") {
+        end++;
+      }
+      msgs.splice(i, end - i);
+      persist(sessionId, msgs, baseDir);
+      return true;
+    }
+  }
+  return false;
 }
