@@ -77,8 +77,11 @@ export class MessageQueue {
 
     // 存储层职责：委托 router 处理（归档撤回日志 + 删 session 上下文）
     const record = this.messageMap.get(messageId);
-    const sid = record?.sessionId ?? getOrCreateSession(userId);
-    handleRecall(userId, sid, messageId);
+    if (!record) {
+      return;
+    }
+
+    handleRecall(userId, record.sessionId, messageId);
 
     this.messageMap.delete(messageId);
   }

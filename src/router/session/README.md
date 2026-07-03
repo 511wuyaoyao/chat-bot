@@ -23,4 +23,3 @@ data/{userId}/session/
 - `set.ts` — 消息写入（context.json）
 - `utils/types.ts` — StoredMessage 类型
 - `utils/storage.ts` — 路径工具，支持 agent 子目录注入
-- `utils/system-prompt.ts` — 默认 system prompt 构建（checker 旧路径使用）

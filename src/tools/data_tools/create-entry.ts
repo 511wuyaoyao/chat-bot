@@ -5,7 +5,6 @@
 import { toolRegistry, ToolHandler } from "../../agent/tool-registry";
 import { addEntry } from "./data_engine/file-engine";
 import { EntryData } from "./data_engine/entities";
-import { getStatusChar } from "./status-map";
 import { nowLocal } from "../../utils/time-utils";
 import { TOOL_GUIDE_ADD_ENTRY } from "../../prompt";
 
@@ -30,7 +29,7 @@ toolRegistry.register({
           fileName: { type: "string", description: "文件名（不含 .md），如 电影、日程表" },
           fields: {
             type: "object",
-            description: "自由键值对，键为字段名，值为字符串或数字。如 {\"status\":\"想看\",\"url\":\"https://...\",\"interest\":80}",
+            description: "自由键值对，键为中文字段名，值为字符串或数字。如 {\"状态\":\"想看\",\"链接\":\"https://...\",\"兴趣度\":80}",
           },
         },
         required: ["title"],
@@ -47,13 +46,6 @@ toolRegistry.register({
     for (const [k, v] of Object.entries(fields)) {
       if (v === null || v === undefined) continue;
       data[k] = v;
-    }
-
-    // 状态（中文）→ engine 内部键
-    const stateValue = data["状态"] as string | undefined;
-    if (stateValue) {
-      data.status = stateValue;
-      data.statusChar = getStatusChar(stateValue);
     }
 
     data.createdAt = nowLocal();

@@ -14,7 +14,9 @@ import { commandRegistry } from "./commands/registry";
 
 import "./commands/help";
 import "./commands/start";
+import "./commands/admin";
 import "./commands/topic";
+import "./commands/token";
 
 // 向后兼容
 export { getOrCreateSession };
@@ -39,8 +41,18 @@ export async function messageRouter(
     return cmd.handler.execute(userId, cmd.args);
   }
 
+  const userPrompt = buildUserPrompt(msg);
+
   // 正常对话 → 主 Agent
-  const reply = await mainAgent(sid, userId, raw.trim(), onProgress, msg.message_id);
+  const reply = await mainAgent(sid, userId, userPrompt, onProgress, msg.message_id, {
+    qqMessage: {
+      messageType: msg.message_type,
+      groupId: msg.group_id,
+      userId,
+      sender: msg.sender,
+      category: msg.category,
+    },
+  });
 
   // 归档 assistant 回复（user 消息已在 message-queue 入队时归档）
   if (reply) {
@@ -52,10 +64,27 @@ export async function messageRouter(
     enqueueDialogue({
       userId,
       mainSessionId: sid,
-      userMessage: raw.trim(),
+      userMessage: userPrompt,
       assistantReply: reply,
     });
   }
 
   return reply;
+}
+
+function buildUserPrompt(msg: QqMessage): string {
+  const currentMessage = msg.raw_message.trim() || "用户当前未输入额外文本。";
+  const quotedMessage = msg.reply?.parsed_message?.trim();
+  if (!quotedMessage) return msg.raw_message.trim();
+
+  return [
+    "用户引用了下面这条消息：",
+    `发送者 QQ：${msg.reply?.user_id}`,
+    `消息 ID：${msg.reply?.message_id}`,
+    "引用内容：",
+    quotedMessage,
+    "",
+    "用户当前发送：",
+    currentMessage,
+  ].join("\n");
 }

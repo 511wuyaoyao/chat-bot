@@ -8,11 +8,29 @@ import path from "path";
 import { EntryData } from "./entities";
 
 const ROOT = path.resolve(process.cwd(), "data");
+const INTERNAL_TREE_DIR_NAMES = new Set(["session"]);
+
+function userRoot(userId: string): string {
+  if (!/^\d+$/.test(userId)) {
+    throw new Error(`Invalid data userId: ${userId}`);
+  }
+  return path.resolve(ROOT, userId);
+}
+
+function safePath(userId: string, ...segments: string[]): string {
+  const root = userRoot(userId);
+  const target = path.resolve(root, ...segments);
+  const rel = path.relative(root, target);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error(`Data path escaped user root: ${segments.join("/")}`);
+  }
+  return target;
+}
 
 // ====== 文件夹（3） ======
 
 export function createFolder(userId: string, folderPath: string, description?: string): boolean {
-  const d = path.join(ROOT, userId, folderPath);
+  const d = safePath(userId, folderPath);
   if (fs.existsSync(d)) return false;
   fs.mkdirSync(d, { recursive: true });
   const n = path.basename(d);
@@ -21,29 +39,29 @@ export function createFolder(userId: string, folderPath: string, description?: s
 }
 
 export function deleteFolder(userId: string, folderPath: string): boolean {
-  const d = path.join(ROOT, userId, folderPath);
+  const d = safePath(userId, folderPath);
   if (!fs.existsSync(d)) return false;
   fs.rmSync(d, { recursive: true, force: true });
   return true;
 }
 
 export function deleteFile(userId: string, folderPath: string, fileName: string): boolean {
-  const fp = path.join(ROOT, userId, folderPath, fileName);
+  const fp = safePath(userId, folderPath, fileName);
   if (!fs.existsSync(fp)) return false;
   fs.unlinkSync(fp);
   return true;
 }
 
 export function updateFolder(userId: string, folderPath: string, changes: { name?: string; description?: string }): boolean {
-  const d = path.join(ROOT, userId, folderPath);
+  const d = safePath(userId, folderPath);
   if (!fs.existsSync(d)) return false;
   if (changes.name) {
-    const nd = path.join(ROOT, userId, changes.name);
+    const nd = safePath(userId, changes.name);
     if (fs.existsSync(nd)) return false;
     fs.renameSync(d, nd);
   }
   if (changes.description !== undefined) {
-    const rp = path.join(changes.name ? path.join(ROOT, userId, changes.name) : d, "README.md");
+    const rp = path.join(changes.name ? safePath(userId, changes.name) : d, "README.md");
     if (fs.existsSync(rp)) {
       const c = fs.readFileSync(rp, "utf-8");
       const nx = /^描述[：:]/m.test(c)
@@ -60,7 +78,7 @@ export function updateFolder(userId: string, folderPath: string, changes: { name
 export function addEntry(
   userId: string, folderPath: string, fileName: string, data: EntryData
 ): boolean {
-  const fp = path.join(ROOT, userId, folderPath, fileName);
+  const fp = safePath(userId, folderPath, fileName);
 
   // 确保目录 + README + 文件存在
   if (!fs.existsSync(path.dirname(fp))) {
@@ -77,25 +95,7 @@ export function addEntry(
   const line = serialize(data);
   let c = fs.readFileSync(fp, "utf-8");
 
-  // 有 status → 放到对应 H2 section 下；没有 → 直接追加到文件末尾
-  const section = data.status as string | undefined;
-  if (section) {
-    const h2 = `## ${section}`;
-    if (!c.includes(h2)) c = c.trimEnd() + `\n\n${h2}\n\n`;
-    const esc = section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const re = new RegExp(`(## ${esc}\\n)\\n*`, "u");
-    const m = c.match(re);
-    let pos: number;
-    if (!m) { pos = c.length; }
-    else {
-      pos = m.index! + m[0].length;
-      const nh = c.slice(pos).search(/\n##\s/);
-      if (nh >= 0) pos += nh;
-    }
-    c = c.slice(0, pos) + line + "\n" + c.slice(pos);
-  } else {
-    c = c.trimEnd() + "\n" + line + "\n";
-  }
+  c = c.trimEnd() + "\n" + line + "\n";
 
   fs.writeFileSync(fp, c, "utf-8");
   return true;
@@ -157,40 +157,42 @@ export function updateEntry(
   }
   if (!found) return false;
 
-  const newLine = serialize(data);
+  const currentLines = fs.readFileSync(found.path, "utf-8").split("\n");
+  const oldData = parseEntry(currentLines[found.lineNo]);
+  const merged = mergeEntry(oldData, data);
+  const newLine = serialize(merged);
   const nf = opts?.newFolder ?? found.folder;
   const nfl = opts?.newFile ?? found.file;
 
   // 同文件：原地替换
   if (nf === found.folder && nfl === found.file) {
-    const lines = fs.readFileSync(found.path, "utf-8").split("\n");
-    lines[found.lineNo] = newLine;
-    fs.writeFileSync(found.path, lines.join("\n"), "utf-8");
+    currentLines[found.lineNo] = newLine;
+    fs.writeFileSync(found.path, currentLines.join("\n"), "utf-8");
     return true;
   }
 
   // 跨文件：先加后删
-  if (!addEntry(userId, nf, nfl, data)) return false;
-  const lines = fs.readFileSync(found.path, "utf-8").split("\n");
-  lines.splice(found.lineNo, 1);
-  fs.writeFileSync(found.path, lines.join("\n"), "utf-8");
+  if (!addEntry(userId, nf, nfl, merged)) return false;
+  currentLines.splice(found.lineNo, 1);
+  fs.writeFileSync(found.path, currentLines.join("\n"), "utf-8");
   return true;
 }
 
 // ====== 查出（2） ======
 
 export function readFile(userId: string, folderPath: string, fileName: string): string {
-  const fp = path.join(ROOT, userId, folderPath, fileName);
+  const fp = safePath(userId, folderPath, fileName);
   return fs.existsSync(fp) ? fs.readFileSync(fp, "utf-8") : "";
 }
 
 export function scanTree(userId: string): string {
-  const root = path.join(ROOT, userId);
+  const root = userRoot(userId);
   if (!fs.existsSync(root)) return "";
   const out: string[] = [];
   let fc = 0, ec = 0;
   (function walk(d: string, indent: number) {
     for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      if (shouldHideFromTree(e)) continue;
       if (e.isDirectory()) {
         const pfx = "  ".repeat(indent);
         let desc = "";
@@ -210,9 +212,8 @@ export function scanTree(userId: string): string {
       const titles: string[] = [];
       let n = 0;
       for (const l of c.split("\n")) {
-        const cm = l.match(/^-\s*\[[ x\-~?]\]\s+(.+)/);
         const pm = l.match(/^-\s+(.+)/);
-        const m = cm || pm;
+        const m = pm;
         if (m) {
           n++;
           if (titles.length < 5) {
@@ -226,27 +227,63 @@ export function scanTree(userId: string): string {
       fc++; ec += n;
     }
   })(root, 0);
-  return out.length ? `当前数据目录（${fc} 个文件，${ec} 条记录）\n${out.join("\n")}` : "";
+  if (!out.length) return "";
+
+  return `当前数据目录（${fc} 个文件，${ec} 条记录）\n${out.join("\n")}`;
 }
 
 // ====== 序列化 ======
 
+/** 过滤 session 等内部运行时目录，避免暴露到 Attention 和 get_tree。 */
+function shouldHideFromTree(entry: fs.Dirent): boolean {
+  return entry.isDirectory() && INTERNAL_TREE_DIR_NAMES.has(entry.name.toLowerCase());
+}
+
 function serialize(data: EntryData): string {
-  const ch = data.statusChar as string | undefined;
-  const prefix = ch ? `- [${ch}] ${data.title}` : `- ${data.title}`;
-  const parts = [prefix];
+  const parts = [`- ${data.title}`];
   for (const [k, v] of Object.entries(data)) {
-    if (k === "title" || k === "status" || k === "statusChar" || v === undefined || v === null) continue;
+    if (k === "title" || v === undefined || v === null) continue;
     parts.push(`${k}：${v}`);
   }
   return parts.join("  ");
 }
 
+function mergeEntry(oldData: EntryData, patch: EntryData): EntryData {
+  const merged: EntryData = { ...oldData, title: patch.title || oldData.title };
+  for (const [k, v] of Object.entries(patch)) {
+    if (k === "title" || v === undefined || v === null) continue;
+    merged[k] = v;
+  }
+  return merged;
+}
+
+function parseEntry(line: string): EntryData {
+  const title = parseTitle(line) || "";
+  const data: EntryData = { title };
+  const body = stripEntryPrefix(line);
+  const sep = body.search(/\s{2}|\t| {3}/);
+  if (sep < 0) return data;
+
+  const rest = body.slice(sep).trim();
+  for (const part of rest.split(/\s{2,}|\t+/)) {
+    const idx = part.search(/[：:]/);
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key && value) data[key] = value;
+  }
+  return data;
+}
+
+function stripEntryPrefix(line: string): string {
+  const plain = line.match(/^-\s+(.+)/);
+  return plain ? plain[1] : line;
+}
+
 /** 从条目行解析标题（内部 & 导出共用） */
 function parseTitle(line: string): string | null {
-  const sm = line.match(/^-\s*\[[ x\-~?]\]\s+(.+)/);
   const pm = line.match(/^-\s+(.+)/);
-  const m = sm || pm;
+  const m = pm;
   if (!m) return null;
   const c = m[1];
   const lk = c.match(/^\[(.+?)\]\(.+?\)/);
@@ -256,7 +293,7 @@ function parseTitle(line: string): string | null {
 }
 
 function listMd(userId: string): { path: string; folder: string; file: string }[] {
-  const base = path.join(ROOT, userId);
+  const base = userRoot(userId);
   if (!fs.existsSync(base)) return [];
   const r: { path: string; folder: string; file: string }[] = [];
   (function walk(d: string) {
@@ -272,4 +309,3 @@ function listMd(userId: string): { path: string; folder: string; file: string }[
   })(base);
   return r;
 }
-

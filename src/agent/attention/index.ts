@@ -11,8 +11,18 @@
 import { folderTreeContext } from "./folder_tree";
 import { timeContext } from "./time";
 import { topicQueueText } from "./topic_queue";
+import { transactionEventAttentionText } from "../transaction-event";
+import { groupChatAttentionText, GroupChatAttentionInput } from "./group_chat";
 
-export function buildAttention(userId: string, sessionId?: string): string {
+export interface AttentionRuntimeContext {
+  qqMessage?: GroupChatAttentionInput;
+}
+
+export function buildAttention(
+  userId: string,
+  sessionId?: string,
+  runtimeContext?: AttentionRuntimeContext
+): string {
   const parts: string[] = [];
 
   const tree = folderTreeContext(userId);
@@ -22,9 +32,21 @@ export function buildAttention(userId: string, sessionId?: string): string {
   if (time) parts.push(time);
 
   if (sessionId) {
-    const topics = topicQueueText(userId, sessionId);
+    const mainSessionId = mainSessionIdOf(sessionId);
+    const topics = topicQueueText(userId, mainSessionId);
     if (topics) parts.push(topics);
+    const transactions = transactionEventAttentionText(userId, mainSessionId);
+    if (transactions) parts.push(transactions);
   }
 
+  const groupChat = runtimeContext?.qqMessage
+    ? groupChatAttentionText(runtimeContext.qqMessage)
+    : undefined;
+  if (groupChat) parts.push(groupChat);
+
   return parts.join("\n\n");
+}
+
+function mainSessionIdOf(sessionId: string): string {
+  return sessionId.replace(/_(topic|exec)$/, "");
 }

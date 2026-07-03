@@ -4,11 +4,14 @@
 
 import { validateConfig } from "./config";
 import "./tools";
+import { recordTokenUsage } from "./agent/token-usage";
 import { QqAdapter, QqMessage } from "./qq/adapter";
 import { MsgHeartbeat } from "./qq/connection";
+import { getOrCreateSession } from "./router/data-index";
 import { MessageQueue } from "./router/message-queue";
 import { startProactive } from "./scheduler/proactive";
 import { logger, cleanOldLogs } from "./utils/logger";
+import { startDebugServer } from "./debug/server";
 
 async function main() {
   await cleanOldLogs();
@@ -22,8 +25,16 @@ async function main() {
 
   const queue = new MessageQueue();
   const adapter = new QqAdapter({
-    onMessage: (msg: QqMessage) => { queue.enqueue(msg); return Promise.resolve(null); },
+    onMessage: async (msg: QqMessage) => { queue.enqueue(msg); },
     onRecall: (uid: string, id: number) => { queue.recall(uid, id); },
+    onTokenUsage: (userId: string, actor: string, usage: unknown) => {
+      recordTokenUsage({
+        userId,
+        mainSessionId: getOrCreateSession(userId),
+        actor,
+        usage,
+      });
+    },
   });
   queue.setAdapter(adapter);
 
@@ -33,11 +44,13 @@ async function main() {
   heartbeat.start();
 
   const stopProactive = startProactive(adapter);
+  const stopDebugServer = startDebugServer();
 
   const shutdown = () => {
     logger.info("正在关闭...");
     heartbeat.stop();
     stopProactive();
+    stopDebugServer?.();
     adapter.stop();
     process.exit(0);
   };

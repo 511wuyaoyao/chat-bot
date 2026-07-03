@@ -1,6 +1,5 @@
-/**
- * 话题队列 — 内存缓存 + 原子持久化
- * 存储路径：data/{userId}/session/{mainSessionId}/topic-queue.json
+﻿/**
+ * 璇濋闃熷垪 鈥?鍐呭瓨缂撳瓨 + 鍘熷瓙鎸佷箙鍖? * 瀛樺偍璺緞锛歞ata/{userId}/session/{mainSessionId}/topic-queue.json
  */
 
 import fs from "fs";
@@ -19,16 +18,20 @@ export interface TopicEntry {
   askMessageId?: number;
 }
 
-// ====== 内存缓存 ======
+// ====== 鍐呭瓨缂撳瓨 ======
 
 const cache = new Map<string, TopicEntry[]>();
+
+function cacheKey(userId: string, sessionId: string): string {
+  return `${userId}:${sessionId}`;
+}
 
 function filePath(userId: string, sessionId: string): string {
   return path.join(DATA_ROOT, userId, "session", sessionId, "topic-queue.json");
 }
 
 function load(userId: string, sessionId: string): TopicEntry[] {
-  const key = sessionId;
+  const key = cacheKey(userId, sessionId);
   if (cache.has(key)) return cache.get(key)!;
   const fp = filePath(userId, sessionId);
   if (!fs.existsSync(fp)) {
@@ -52,10 +55,10 @@ function save(userId: string, sessionId: string, data: TopicEntry[]): void {
   const tmp = fp + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
   fs.renameSync(tmp, fp);
-  cache.set(sessionId, data);
+  cache.set(cacheKey(userId, sessionId), data);
 }
 
-// ====== 对外接口 ======
+// ====== 瀵瑰鎺ュ彛 ======
 
 export function pushTopic(
   userId: string, sessionId: string,
@@ -63,7 +66,15 @@ export function pushTopic(
   persist: PersistDecision, askMessageId?: number
 ): boolean {
   const data = load(userId, sessionId);
-  if (data.some((t) => t.topic === topic)) return false;
+  const existing = data.find((t) => t.topic === topic);
+  if (existing) {
+    existing.source = source;
+    existing.summary = summary;
+    existing.persist = persist;
+    if (askMessageId !== undefined) existing.askMessageId = askMessageId;
+    save(userId, sessionId, data);
+    return false;
+  }
   data.push({ topic, source, summary, createdAt: new Date().toISOString().replace("T", " ").slice(0, 19), persist, askMessageId });
   if (data.length > 50) data.splice(0, data.length - 50);
   save(userId, sessionId, data);
@@ -87,8 +98,26 @@ export function getAllTopics(userId: string, sessionId: string): TopicEntry[] {
 }
 
 export function topicQueueText(userId: string, sessionId: string): string {
-  const topics = pullActive(userId, sessionId);
-  if (topics.length === 0) return "";
-  const lines = topics.map((t) => `- ${t.topic}（${t.source}）`);
-  return `近期关注话题（${topics.length} 条）\n${lines.join("\n")}`;
+  const allTopics = getAllTopics(userId, sessionId);
+  const activeTopics = allTopics.filter((t) => t.persist === "yes" || t.persist === "ask");
+  if (allTopics.length === 0) return "当前追踪话题：暂无";
+
+  const activeLines = activeTopics.map((t) =>
+    `- ${t.topic} [${t.persist}] ${t.createdAt} | 来源：${t.source} | 摘要：${t.summary}`
+  );
+  if (activeLines.length > 0) {
+    return `当前追踪话题（${activeLines.length} 条）\n${activeLines.join("\n")}`;
+  }
+
+  const inactiveLines = allTopics
+    .filter((t) => t.persist === "no")
+    .slice(-3)
+    .map((t) => `- ${t.topic} [no] ${t.createdAt} | ${t.summary}`);
+
+  return [
+    "当前追踪话题：暂无活跃",
+    inactiveLines.length > 0
+      ? `非活跃话题（仅用于避免重复，不要主动延续）：\n${inactiveLines.join("\n")}`
+      : "",
+  ].filter(Boolean).join("\n");
 }

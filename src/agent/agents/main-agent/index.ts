@@ -7,6 +7,7 @@
 
 import path from "path";
 import { agentLoop, ProgressCallback } from "../../agent-loop";
+import { AttentionRuntimeContext } from "../../attention";
 import { getMainTools, executeMainTool } from "./tools";
 import { PROMPT_MAIN } from "../../../prompt";
 
@@ -17,7 +18,8 @@ export async function mainAgent(
   userId: string,
   text: string,
   onProgress?: ProgressCallback,
-  messageId?: number
+  messageId?: number,
+  attentionContext?: AttentionRuntimeContext
 ): Promise<string> {
   const storageDir = path.join(DATA_ROOT, userId, "session", sessionId, "main");
 
@@ -25,7 +27,10 @@ export async function mainAgent(
     systemPrompt: PROMPT_MAIN,
     tools: getMainTools(),
     executeTool: (name, args) => executeMainTool(name, args, userId, sessionId, onProgress),
+    actor: "main-agent",
+    mainSessionId: sessionId,
     storageDir,
     messageId,
+    attentionContext,
   });
 }

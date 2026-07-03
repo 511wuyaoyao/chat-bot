@@ -7,7 +7,6 @@ import path from "path";
 import { toolRegistry, ToolHandler } from "../../agent/tool-registry";
 import { updateEntry } from "./data_engine/file-engine";
 import { EntryData } from "./data_engine/entities";
-import { getStatusChar } from "./status-map";
 import { TOOL_GUIDE_UPDATE_ENTRY } from "../../prompt";
 
 toolRegistry.register({
@@ -46,13 +45,6 @@ toolRegistry.register({
     for (const [k, v] of Object.entries(fields)) {
       if (v === null || v === undefined) continue;
       data[k] = v;
-    }
-
-    // 状态（中文）→ engine 内部键
-    const stateValue = data["状态"] as string | undefined;
-    if (stateValue) {
-      data.status = stateValue;
-      data.statusChar = getStatusChar(stateValue);
     }
 
     // interestDelta：从现有条目读取原值再加减

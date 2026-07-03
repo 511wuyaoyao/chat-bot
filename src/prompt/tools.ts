@@ -12,7 +12,8 @@ export const TOOL_PROGRESS: Record<string, string> = {
   update_folder: "正在更新分类",
   get_tree: "正在查看",
   get_entry: "正在读取",
-  web_search: "正在搜索",
+  deepseek_web_search: "正在搜索",
+  tavily_search: "正在搜索",
   add_schedule: "正在设置提醒",
   update_schedule: "正在更新提醒",
   delete_schedule: "正在删除提醒",
@@ -24,12 +25,14 @@ export const TOOL_GUIDE_ADD_ENTRY =
   "add_entry 用于记录内容（电影、餐厅、书籍、任务等），不是用于设置提醒。\n" +
   "用户说记一下xxx → add_entry 记录内容。\n" +
   "用户说明天x点提醒我xxx → add_schedule 设置提醒（必要时先 add_entry 再 add_schedule）。\n" +
-  "fields 键值对用中文，由你自行决定。常用参考：状态、备注、链接、兴趣度、进度。\n" +
+  "fields 键值对用中文，由你自行决定。状态是普通中文字段，例如 状态：已解决，不使用 checkbox 表达状态。\n" +
+  "常用参考：状态、备注、链接、兴趣度、进度。\n" +
   "同类条目保持字段一致。folderPath 和 fileName 根据内容分类。";
 
 export const TOOL_GUIDE_UPDATE_ENTRY =
   "update_entry 自定义字段原则\n" +
-  "fields 键值对用中文，只传需要修改的字段。\n" +
+  "fields 键值对用中文，只传需要修改的字段；工具会保留旧字段并合并修改。\n" +
+  "状态是唯一权威状态字段，例如 状态：已解决，不使用 checkbox 表达状态。\n" +
   "interestDelta 用于增减兴趣度：用户喜欢 +25，不喜欢 -40，标记完成 -80。\n" +
   "观察用户对话中的偏好：用户反复问某类信息，下次同类条目主动带上对应字段。\n" +
   "同条目字段保持语义连贯。";

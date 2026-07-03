@@ -7,7 +7,7 @@ import path from "path";
 import { commandRegistry } from "./registry";
 import { getOrCreateSession } from "../data-index";
 import { agentLoop } from "../../agent/agent-loop";
-import { pushTopic, getAllTopics, TopicEntry } from "../../agent/attention/topic_queue";
+import { pushTopic } from "../../agent/attention/topic_queue";
 import { toolRegistry, ToolDefinition } from "../../agent/tool-registry";
 import { PROMPT_TOPIC } from "../../prompt";
 import { logger } from "../../utils/logger";
@@ -35,32 +35,26 @@ function getTools(): ToolDefinition[] {
   });
 }
 
-function formatTopics(topics: TopicEntry[]): string {
-  if (topics.length === 0) return "（暂无追踪话题）";
-  return topics.map((t) =>
-    `- ${t.topic} [${t.persist}] ${t.createdAt} | ${t.summary}`
-  ).join("\n");
-}
-
 commandRegistry.register({
   name: "topic",
   description: "与话题管家对话，查看/管理追踪中的话题",
   async execute(userId: string, args: string[]): Promise<string> {
     const mainSid = getOrCreateSession(userId);
-    const userText = args.join(" ").trim();
+    const userText = args.join(" ").trim() || "展示当前追踪话题列表";
+    const topicText = [
+      "【当前模式：主动对话】",
+      `用户：${userText}`,
+    ].join("\n");
 
     const sessionId = `${mainSid}_topic`;
     const storageDir = path.join(DATA_ROOT, userId, "session", mainSid, "topic");
 
-    const systemPrompt = PROMPT_TOPIC.replace(
-      "{topics}",
-      formatTopics(getAllTopics(userId, mainSid))
-    );
-
     try {
-      const reply = await agentLoop(sessionId, userId, userText, undefined, {
-        systemPrompt,
+      const reply = await agentLoop(sessionId, userId, topicText, undefined, {
+        systemPrompt: PROMPT_TOPIC,
         tools: getTools(),
+        actor: "topic-agent",
+        mainSessionId: mainSid,
         storageDir,
         executeTool: async (name, args) => {
           if (name === "push_topic") {

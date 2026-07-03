@@ -6,7 +6,10 @@
 // ====== 重导出 ======
 
 export * from "./tools";
+export * from "./messages";
+export * from "./attention";
 export * from "./main-agent";
+export * from "./exec-agent";
 export * from "./topic-agent";
 
 // ====== Agent Loop 内部消息 ======

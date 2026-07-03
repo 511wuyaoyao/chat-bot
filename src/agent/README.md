@@ -32,8 +32,8 @@ attention/             ← 注意力层（长期记忆 → 本轮上下文注入
 
 | Agent | 工具 |
 |---|---|
-| main-agent | web_search, get_entry, get_tree, schedule 全套, delegate |
-| exec-agent | web_search, get_entry, get_tree, schedule 全套 |
+| main-agent | deepseek_web_search, get_entry, get_tree, schedule 全套, delegate |
+| exec-agent | tavily_search, get_entry, get_tree, schedule 全套 |
 | topic-agent | data 全套（读写）, push_topic, ask_user |
 
 ## 调用链

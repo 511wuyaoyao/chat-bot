@@ -1,14 +1,18 @@
 /**
  * 上下文窗口构建
- * 返回：[system_prompt, ...history, attention]
- * 注意力消息不持久化，每次动态注入
+ * 返回：[system_prompt, ...history]
+ * 动态注意力由 agentLoop 在当前用户消息前临时注入，不在 session 层处理
  */
 
 import { StoredMessage } from "./utils/types";
 import { getCache } from "./set";
-import { buildSystemPrompt } from "./utils/system-prompt";
-import { buildAttention } from "../../agent/attention/index";
 import { logger } from "../../utils/logger";
+import { config } from "../../config";
+
+interface HistorySegment {
+  messages: StoredMessage[];
+  chars: number;
+}
 
 function toolCallIds(msg: StoredMessage): string[] {
   if (msg.role !== "assistant" || !Array.isArray(msg.tool_calls)) return [];
@@ -18,7 +22,27 @@ function toolCallIds(msg: StoredMessage): string[] {
 }
 
 function toApiMessage(msg: StoredMessage): StoredMessage {
-  const { id: _id, timestamp: _timestamp, message_id: _messageId, ...apiMsg } = msg;
+  if (msg.role === "assistant") {
+    const apiMsg: StoredMessage = { role: "assistant", content: msg.content };
+    if (msg.tool_calls) apiMsg.tool_calls = msg.tool_calls;
+    if (msg.name) apiMsg.name = msg.name;
+    return apiMsg;
+  }
+
+  if (msg.role === "tool") {
+    return {
+      role: "tool",
+      content: msg.content,
+      tool_call_id: msg.tool_call_id,
+    };
+  }
+
+  if (msg.role === "system") {
+    return { role: "system", content: msg.content };
+  }
+
+  const apiMsg: StoredMessage = { role: "user", content: msg.content };
+  if (msg.name) apiMsg.name = msg.name;
   return apiMsg;
 }
 
@@ -70,27 +94,81 @@ function sanitizeHistory(sessionId: string, history: StoredMessage[]): StoredMes
   return result;
 }
 
+function messageCost(msg: StoredMessage): number {
+  return JSON.stringify({
+    role: msg.role,
+    content: msg.content,
+    tool_calls: msg.tool_calls,
+    tool_call_id: msg.tool_call_id,
+    name: msg.name,
+  }).length;
+}
+
+function segmentHistory(history: StoredMessage[]): HistorySegment[] {
+  const segments: HistorySegment[] = [];
+
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
+    const messages = [msg];
+
+    if (toolCallIds(msg).length > 0) {
+      let cursor = i + 1;
+      while (cursor < history.length && history[cursor].role === "tool") {
+        messages.push(history[cursor]);
+        cursor++;
+      }
+      i = cursor - 1;
+    }
+
+    segments.push({
+      messages,
+      chars: messages.reduce((sum, item) => sum + messageCost(item), 0),
+    });
+  }
+
+  return segments;
+}
+
+function windowHistory(history: StoredMessage[]): StoredMessage[] {
+  const maxMessages = config.agent.contextMaxMessages;
+  const maxChars = config.agent.contextMaxChars;
+  if (maxMessages <= 0 && maxChars <= 0) return history;
+
+  const selected: HistorySegment[] = [];
+  let totalMessages = 0;
+  let totalChars = 0;
+
+  for (const segment of segmentHistory(history).reverse()) {
+    const nextMessages = totalMessages + segment.messages.length;
+    const nextChars = totalChars + segment.chars;
+    const exceedsMessages = maxMessages > 0 && nextMessages > maxMessages;
+    const exceedsChars = maxChars > 0 && nextChars > maxChars;
+
+    if (selected.length > 0 && (exceedsMessages || exceedsChars)) break;
+
+    selected.push(segment);
+    totalMessages = nextMessages;
+    totalChars = nextChars;
+
+    if (exceedsMessages || exceedsChars) break;
+  }
+
+  return selected.reverse().flatMap((segment) => segment.messages);
+}
+
 /** 获取完整上下文窗口数组。baseDir 仅 agentLoop 内部使用 */
 export function get(
   sessionId: string,
   userId: string,
-  opts?: { systemPrompt?: string; skipAttention?: boolean; baseDir?: string }
+  opts?: { systemPrompt?: string; baseDir?: string }
 ): StoredMessage[] {
   const history = getCache(sessionId, opts?.baseDir);
   const safeHistory = sanitizeHistory(sessionId, history);
-  const systemContent = opts?.systemPrompt ?? buildSystemPrompt();
+  const windowedHistory = windowHistory(safeHistory);
+  const systemContent = opts?.systemPrompt ?? "你是用户的个人助理。请根据上下文自然回复。";
 
-  const result: StoredMessage[] = [
+  return [
     { role: "system", content: systemContent },
-    ...safeHistory,
+    ...windowedHistory,
   ];
-
-  if (!opts?.skipAttention) {
-    const attentionText = buildAttention(userId, sessionId);
-    if (attentionText) {
-      result.push({ role: "assistant", content: attentionText });
-    }
-  }
-
-  return result;
 }

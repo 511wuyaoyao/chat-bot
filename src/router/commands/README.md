@@ -8,6 +8,11 @@
 |---|---|
 | `/help` | 显示所有可用指令 |
 | `/start` `/new` | 创建新对话并切换，旧对话保留 |
+| `/admin as <QQ> /命令 参数` | 管理员以指定用户身份执行已有命令 |
+| `/admin new-all` | 管理员为所有非管理员账号创建新对话 |
+| `/admin user add/del/list <QQ>` | 管理员管理用户白名单 |
+| `/admin group add/del/list <群号>` | 管理员管理群聊白名单 |
+| `/admin token total/day/week/month` | 管理员查看全局 Token 消耗 |
 
 ## 新增指令
 

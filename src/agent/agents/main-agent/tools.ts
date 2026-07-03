@@ -9,7 +9,7 @@ import { ProgressCallback } from "../../agent-loop";
 
 /** 主 Agent 选用 */
 const SELECTED = [
-  "web_search",
+  "deepseek_web_search",
   "get_entry",
   "get_tree",
   "add_schedule",

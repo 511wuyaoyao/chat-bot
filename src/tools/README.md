@@ -9,7 +9,7 @@
 | `data_tools/` | add_entry, update_entry, delete_entry, get_entry, get_tree, create_folder, delete_folder, delete_file, update_folder | topic-agent 全部, main/exec 只读 |
 | `schedule_tools/` | add_schedule, update_schedule, delete_schedule, query_schedules | main-agent, exec-agent |
 | `topic_tools/` | push_topic, ask_user | topic-agent |
-| — | web_search | main-agent, exec-agent |
+| `web/` | deepseek_web_search, tavily_search | main-agent 使用 deepseek_web_search，exec-agent 使用 tavily_search |
 
 ## 设计原则
 

@@ -7,7 +7,7 @@ import { toolRegistry, ToolDefinition } from "../../tool-registry";
 
 /** 执行 Agent 选用 */
 const SELECTED = [
-  "web_search",
+  "tavily_search",
   "get_entry",
   "get_tree",
   "add_schedule",

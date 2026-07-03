@@ -5,15 +5,6 @@
 
 import { TrackableEntry } from "../tools/data_tools/data_engine/entities";
 
-/** 状态字符到文字标签的映射 */
-const STATUS_LABEL: Record<string, string> = {
-  " ": "待办",
-  "~": "进行中",
-  x:  "已完成",
-  "-": "搁置",
-  "?": "待确认",
-};
-
 /** 创建确认 */
 export function buildCreateConfirm(title: string, folderPath: string, fileName: string): string {
   const path = `${folderPath}/${fileName}`;
@@ -22,7 +13,7 @@ export function buildCreateConfirm(title: string, folderPath: string, fileName: 
 
 /** 查询结果 — 单条详情 */
 export function buildEntryDetail(entry: TrackableEntry): string {
-  const status = STATUS_LABEL[entry.statusChar] || "待办";
+  const status = typeof entry["状态"] === "string" ? entry["状态"] : "未标注";
   const parts = [`[${status}] ${entry.title}`];
   if (entry.url) parts.push(`链接：${entry.url}`);
   if (entry.progress) parts.push(`进度：${entry.progress}`);
@@ -36,7 +27,7 @@ export function buildEntryDetail(entry: TrackableEntry): string {
 export function buildEntryList(entries: TrackableEntry[]): string {
   return entries
     .map((e) => {
-      const status = STATUS_LABEL[e.statusChar] || "待办";
+      const status = typeof e["状态"] === "string" ? e["状态"] : "未标注";
       return `[${status}] ${e.title}`;
     })
     .join("\n");

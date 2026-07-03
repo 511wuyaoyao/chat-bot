@@ -7,7 +7,7 @@
 
 import path from "path";
 import { agentLoop } from "../../agent-loop";
-import { pushTopic, getAllTopics, TopicEntry } from "../../attention/topic_queue";
+import { pushTopic } from "../../attention/topic_queue";
 import { toolRegistry, ToolDefinition } from "../../tool-registry";
 import { logger } from "../../../utils/logger";
 import { PROMPT_TOPIC } from "../../../prompt";
@@ -37,17 +37,12 @@ function getTopicTools(): ToolDefinition[] {
   });
 }
 
-/** 格式化话题列表用于注入 prompt */
-function formatTopics(topics: TopicEntry[]): string {
-  if (topics.length === 0) return "（暂无追踪话题）";
-  return topics.map((t) =>
-    `- ${t.topic} [${t.persist}] ${t.createdAt} | ${t.summary}`
-  ).join("\n");
-}
-
-function buildPrompt(userId: string, mainSessionId: string): string {
-  const topics = getAllTopics(userId, mainSessionId);
-  return PROMPT_TOPIC.replace("{topics}", formatTopics(topics));
+function buildPassiveAnalysisText(dialogue: DialogueItem): string {
+  return [
+    "【当前模式：被动分析】",
+    `用户：${dialogue.userMessage}`,
+    `助手：${dialogue.assistantReply}`,
+  ].join("\n");
 }
 
 export async function topicAgent(
@@ -58,13 +53,15 @@ export async function topicAgent(
   const sessionId = `${mainSessionId}_topic`;
 
   try {
-    const text = `用户：${dialogue.userMessage}\n助手：${dialogue.assistantReply}`;
+    const text = buildPassiveAnalysisText(dialogue);
 
     const storageDir = path.join(DATA_ROOT, userId, "session", mainSessionId, "topic");
 
     await agentLoop(sessionId, userId, text, undefined, {
-      systemPrompt: buildPrompt(userId, mainSessionId),
+      systemPrompt: PROMPT_TOPIC,
       tools: getTopicTools(),
+      actor: "topic-agent",
+      mainSessionId,
       storageDir,
       executeTool: async (name, args) => {
         if (name === "push_topic") {

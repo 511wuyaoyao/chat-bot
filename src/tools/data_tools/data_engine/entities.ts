@@ -10,8 +10,6 @@ export interface EntryData {
 
 /** 有状态追踪的条目（任务、日程） */
 export interface TrackableEntry extends EntryData {
-  status: string;
-  statusChar: string;
   remindAt?: string;
   deadline?: string;
   createdAt?: string;

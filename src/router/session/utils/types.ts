@@ -10,8 +10,14 @@ export interface StoredMessage {
   tool_calls?: unknown;
   tool_call_id?: string;
   name?: string;
-  /** DeepSeek thinking 模式返回的推理内容，必须原样传回 */
+  /** DeepSeek thinking 模式返回的推理内容，仅持久化用于调试，不回传给模型 */
   reasoning_content?: string;
+  /** 模型返回的完整 usage，仅用于审计；get() 会过滤，不回传给模型 */
+  usage?: Record<string, unknown>;
+  /** 模型返回的 finish_reason，仅用于审计；get() 会过滤 */
+  finish_reason?: string | null;
+  /** 生成这条 assistant 消息的模型，仅用于审计；get() 会过滤 */
+  model?: string;
   /** QQ message_id，用于撤回定位（仅 user 消息有） */
   message_id?: number;
   /** 存储毫秒时间戳（存储层自动注入，调用方可不传） */
@@ -27,4 +33,3 @@ export type ArchiveEntry =
   | { type: "tool_call"; name: string; args: unknown; call_id: string; timestamp: number }
   | { type: "tool_result"; call_id: string; result: unknown; timestamp: number }
   | { type: "system_prompt"; content: string; timestamp: number };
-

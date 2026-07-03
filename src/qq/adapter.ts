@@ -1,56 +1,44 @@
 /**
  * QQ 平台适配器
- * 基于 Express + WebSocket 接收 NapCat 事件推送，通过 HTTP API 发送消息
+ * 负责接入 NapCat WebSocket 事件，并通过 NapCat HTTP API 发送和撤回消息。
  */
 
 import express, { Request, Response } from "express";
 import http from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import { config } from "../config";
+import { messages } from "../prompt";
 import { logger } from "../utils/logger";
 import { WsPing } from "./connection";
+import {
+  getSelfSentPrivatePeerId,
+  normalizeQqMessage,
+  OneBotEvent,
+} from "./event-normalizer";
+import {
+  OneBotApiResponse,
+  QqAdapterOptions,
+  QqMessage,
+  QqReply,
+  QqMessageType,
+} from "./interface";
+import { renderMessageSegmentsToText } from "./message-segment-renderer";
+import { processQqMessage } from "./message-pipeline";
+import { buildMessageSegments } from "./message-pipeline/message-segments";
+import { SelfChatEchoFilter } from "./self-chat-echo-filter";
+import { SentMessageTracker } from "./sent-message-tracker";
 
-/** OneBot v11 消息事件 */
-export interface QqMessage {
-  message_id: number;
-  user_id: number;
-  group_id?: number;
-  message_type: "private" | "group";
-  raw_message: string;
-  sender: {
-    nickname: string;
-  };
-  /** 引用回复的消息（OneBot v11 reply 字段），用户引用某条消息时存在 */
-  reply?: {
-    message_id: number;
-    user_id: number;
-    raw_message: string;
-  } | null;
-}
-
-export interface QqAdapterOptions {
-  onMessage: (msg: QqMessage) => Promise<string | null>;
-  /** 用户撤回消息时回调，传入 user_id 和 被撤回的 message_id */
-  onRecall?: (userId: string, messageId: number) => void;
-}
+export type { QqAdapterOptions, QqMessage, QqReply } from "./interface";
 
 const napcatUrl = process.env.NAPCAT_BASE_URL || "http://127.0.0.1:3000";
-
-interface OneBotApiResponse {
-  status?: string;
-  retcode?: number;
-  message?: string;
-  wording?: string;
-  data?: {
-    message_id?: number;
-  } | null;
-}
 
 export class QqAdapter {
   private app = express();
   private server: http.Server | null = null;
   private wss: WebSocketServer | null = null;
   private currentWs: WebSocket | null = null;
+  private sentMessageTracker = new SentMessageTracker();
+  private selfChatEchoFilter = new SelfChatEchoFilter();
 
   constructor(private options: QqAdapterOptions) {
     this.app.use(express.json());
@@ -70,11 +58,11 @@ export class QqAdapter {
         logger.warn("收到新的 NapCat WebSocket 连接，关闭旧连接");
         this.currentWs.close(1000, "new connection replaced old one");
       }
+
       this.currentWs = ws;
       napcatConnected = true;
       logger.info("NapCat WebSocket 已连接");
 
-      // 保活 ping
       const wsPing = new WsPing(ws);
       wsPing.start();
 
@@ -84,7 +72,7 @@ export class QqAdapter {
           const event = JSON.parse(raw);
           await this.handleEvent(event);
         } catch {
-          // 非 JSON 消息忽略
+          // 非 JSON 消息忽略。
         }
       });
 
@@ -94,7 +82,7 @@ export class QqAdapter {
           this.currentWs = null;
           napcatConnected = false;
         }
-        logger.warn("!!! NapCat WebSocket 断开 !!! — QQ 消息接收已中断，等待 NapCat 自动重连", {
+        logger.warn("NapCat WebSocket 断开，QQ 消息接收已中断，等待 NapCat 自动重连", {
           code,
           reason: reason.toString(),
         });
@@ -109,98 +97,166 @@ export class QqAdapter {
       logger.info(`QQ 适配器已启动，监听端口 ${config.qq.port}`);
       logger.info(`等待 NapCat 反向 WS 连接: ws://127.0.0.1:${config.qq.port}/ws`);
 
-      // 10 秒后仍未连接 → 警告
       setTimeout(() => {
         if (!napcatConnected) {
-          logger.warn("!!! NapCat 未连接 !!! — 启动 10 秒后仍未收到 NapCat WebSocket 连接");
-          logger.warn("请检查：1) NapCatQQ 是否已启动  2) NapCat 网络配置中 WebSocket 客户端地址是否正确");
+          logger.warn("NapCat 未连接：启动 10 秒后仍未收到 NapCat WebSocket 连接");
+          logger.warn("请检查 NapCatQQ 是否已启动，以及 NapCat WebSocket 客户端地址是否正确");
         }
       }, 10_000);
     });
   }
 
-  private async handleEvent(event: Record<string, unknown>) {
-    // 撤回事件
+  private async handleEvent(event: OneBotEvent): Promise<void> {
     if (event.post_type === "notice") {
-      const noticeType = event.notice_type as string;
-      if (noticeType === "friend_recall" || noticeType === "group_recall") {
-        const messageId = event.message_id as number;
-        const uid = String(event.user_id ?? "");
-        if (messageId) {
-          logger.debug(`用户撤回消息`, { user_id: uid, message_id: messageId });
-          this.options.onRecall?.(uid, messageId);
-        }
-      }
+      this.handleNoticeEvent(event);
       return;
     }
 
-    if (event.post_type !== "message") return;
+    const postType = String(event.post_type ?? "");
+    if (postType !== "message" && postType !== "message_sent") return;
+    await this.handleMessageEvent(event, postType);
+  }
 
-    // 过滤掉 Bot 自己发的 / API 响应等
-    if (event.message_type !== "private" && event.message_type !== "group") return;
+  private handleNoticeEvent(event: OneBotEvent): void {
+    const noticeType = String(event.notice_type ?? "");
+    if (noticeType !== "friend_recall" && noticeType !== "group_recall") return;
 
-    // 规范化 reply 字段：OneBot v11 的 reply.sender.user_id → reply.user_id
-    const rawReply = event.reply as Record<string, unknown> | undefined;
-    const normalizedReply = rawReply
-      ? {
-          message_id: rawReply.message_id as number,
-          user_id: (rawReply.sender as Record<string, unknown>)?.user_id as number,
-          raw_message: rawReply.raw_message as string,
-        }
-      : null;
+    const messageId = Number(event.message_id);
+    const userId = String(event.user_id ?? "");
+    if (!messageId) return;
 
-    const msg: QqMessage = { ...(event as unknown as QqMessage), reply: normalizedReply };
-    const userId = String(msg.user_id);
-
-    if (!config.qq.whitelist.includes(userId)) {
-      logger.debug(`忽略非白名单用户: ${userId}`);
-      return;
-    }
-
-    if (!msg.raw_message?.trim()) return;
-
-    logger.info(`收到消息`, {
+    logger.debug("用户撤回消息", {
       user_id: userId,
+      group_id: event.group_id,
+      message_id: messageId,
+      notice_type: noticeType,
+    });
+    this.options.onRecall?.(userId, messageId);
+  }
+
+  private async handleMessageEvent(event: OneBotEvent, postType: string): Promise<void> {
+    let privatePeerId: number | undefined;
+
+    if (postType === "message_sent") {
+      const messageId = Number(event.message_id);
+      if (this.sentMessageTracker.consume(messageId)) return;
+
+      if (event.message_type === "private") {
+        privatePeerId = getSelfSentPrivatePeerId(event, config.qq.selfId);
+        if (!privatePeerId || String(privatePeerId) !== config.qq.selfId) return;
+      }
+    }
+
+    const messageType = event.message_type as QqMessageType;
+    if (messageType !== "private" && messageType !== "group") return;
+
+    const msg = normalizeQqMessage(event, messageType, postType === "message_sent", privatePeerId);
+    if (!msg) return;
+
+    if (this.selfChatEchoFilter.consumeIfEcho(msg)) {
+      logger.debug("忽略自聊回声消息", { message_id: msg.message_id });
+      return;
+    }
+
+    const decision = processQqMessage({
+      messageType,
+      userId: msg.user_id,
+      groupId: msg.group_id,
+      selfId: config.qq.selfId,
+      rawMessage: msg.original_raw_message ?? msg.raw_message,
+      rawSegments: event.message,
+      isSelfSent: msg.is_self_sent,
+      userWhitelist: config.qq.userWhitelist,
+      groupWhitelist: config.qq.groupWhitelist,
+    });
+    msg.category = decision.category;
+    msg.raw_message = decision.rawMessage;
+
+    if (!decision.accepted) {
+      logger.debug("QQ 消息流水线过滤", {
+        category: decision.category,
+        reason: decision.reason,
+        user_id: msg.user_id,
+        group_id: msg.group_id,
+        message_id: msg.message_id,
+      });
+      return;
+    }
+
+    let imageProgressMessageId: number | null = null;
+    const userId = String(msg.user_id);
+    try {
+      if (msg.reply) {
+        msg.reply = await this.hydrateReply(msg.reply);
+      }
+
+      if (msg.reply) {
+        msg.reply.parsed_message = await renderMessageSegmentsToText(msg.reply.raw_segments, {
+          onImageRecognitionStart: async () => {
+            if (imageProgressMessageId) return;
+            imageProgressMessageId = await this.sendMessage(
+              msg.message_type,
+              userId,
+              messages.qq.imageRecognitionProgress,
+              msg.group_id
+            );
+          },
+          onTokenUsage: (actor, usage) => {
+            this.options.onTokenUsage?.(userId, actor, usage);
+          },
+        });
+      }
+
+      msg.raw_message = await renderMessageSegmentsToText(decision.messageSegments, {
+        onImageRecognitionStart: async () => {
+          if (imageProgressMessageId) return;
+          imageProgressMessageId = await this.sendMessage(
+            msg.message_type,
+            userId,
+            messages.qq.imageRecognitionProgress,
+            msg.group_id
+          );
+        },
+        onTokenUsage: (actor, usage) => {
+          this.options.onTokenUsage?.(userId, actor, usage);
+        },
+      });
+    } finally {
+      if (imageProgressMessageId) {
+        await this.recallMessage(imageProgressMessageId);
+      }
+    }
+    if (!msg.raw_message.trim() && !msg.reply?.parsed_message?.trim()) return;
+
+    logger.info("收到消息", {
+      user_id: String(msg.user_id),
+      group_id: msg.group_id,
       message_id: msg.message_id,
-      text: msg.raw_message?.substring(0, 50),
+      message_type: msg.message_type,
+      category: msg.category,
+      text: msg.raw_message.substring(0, 50),
       ...(msg.reply ? { reply_to: msg.reply.message_id, reply_user: msg.reply.user_id } : {}),
     });
 
     try {
-      const reply = await this.options.onMessage(msg);
-      logger.info(`回复内容`, { reply, msg_type: msg.message_type, user_id: userId });
-      if (reply) {
-        await this.sendMessage(msg.message_type, userId, reply, msg.group_id);
-      } else {
-        logger.warn("未生成回复");
-      }
+      await this.options.onMessage(msg);
     } catch (err) {
       logger.error("消息处理异常", { error: String(err) });
     }
   }
 
-  /** 发送消息，返回 message_id（用于后续撤回） */
+  /** 发送消息，返回 message_id，用于后续撤回和 message_sent 回声过滤。 */
   async sendMessage(
     type: "private" | "group",
     userId: string,
     message: string,
     groupId?: number
   ): Promise<number | null> {
+    const shouldTrackSelfChatEcho = type === "private" && userId === config.qq.selfId;
+    if (shouldTrackSelfChatEcho) this.selfChatEchoFilter.remember(message);
+
     try {
-      let response: string;
-      if (type === "private") {
-        response = await this.httpPost(`${napcatUrl}/send_private_msg`, {
-          user_id: Number(userId),
-          message,
-        });
-      } else if (type === "group" && groupId) {
-        response = await this.httpPost(`${napcatUrl}/send_group_msg`, {
-          group_id: groupId,
-          message,
-        });
-      } else {
-        return null;
-      }
+      const response = await this.sendNapCatMessage(type, userId, message, groupId);
       const parsed = JSON.parse(response) as OneBotApiResponse;
       const ok = parsed.status === "ok" || parsed.retcode === 0;
       if (!ok) {
@@ -212,9 +268,11 @@ export class QqAdapter {
         throw new Error(`NapCat API 未返回 message_id：${response.substring(0, 300)}`);
       }
 
-      logger.info(`消息已发送`, { type, user_id: userId, message_id: messageId });
+      logger.info("消息已发送", { type, user_id: userId, message_id: messageId });
+      this.sentMessageTracker.remember(messageId);
       return messageId;
     } catch (err) {
+      if (shouldTrackSelfChatEcho) this.selfChatEchoFilter.forget(message);
       const reason = (err as NodeJS.ErrnoException).code === "ECONNREFUSED"
         ? `NapCat HTTP API 不可达 (${napcatUrl})，请确认 NapCatQQ 已启动且 HTTP 服务端口正确`
         : `发送消息失败：${String(err)}`;
@@ -223,7 +281,6 @@ export class QqAdapter {
     }
   }
 
-  /** 撤回消息 */
   async recallMessage(messageId: number): Promise<boolean> {
     try {
       const response = await this.httpPost(`${napcatUrl}/delete_msg`, {
@@ -231,12 +288,70 @@ export class QqAdapter {
       });
       const parsed = JSON.parse(response) as OneBotApiResponse;
       const ok = parsed.status === "ok" || parsed.retcode === 0;
-      logger.debug(ok ? `消息已撤回: ${messageId}` : `撤回失败: ${messageId}`, { response: response.substring(0, 100) });
+      logger.debug(ok ? `消息已撤回: ${messageId}` : `撤回失败: ${messageId}`, {
+        response: response.substring(0, 100),
+      });
       return ok;
     } catch (err) {
       logger.error("撤回消息失败", { error: String(err), message_id: messageId });
       return false;
     }
+  }
+
+  private async hydrateReply(reply: QqReply): Promise<QqReply> {
+    if (reply.raw_message || (Array.isArray(reply.raw_segments) && reply.raw_segments.length > 0)) {
+      return reply;
+    }
+
+    try {
+      const response = await this.httpPost(`${napcatUrl}/get_msg`, {
+        message_id: reply.message_id,
+      });
+      const parsed = JSON.parse(response) as OneBotApiResponse & {
+        data?: (Record<string, unknown> & {
+          sender?: Record<string, unknown>;
+          message?: unknown;
+        }) | null;
+      };
+      const data = parsed.data;
+      if (!data) return reply;
+
+      const sender = data.sender;
+      const userId = Number(sender?.user_id ?? data.user_id ?? reply.user_id);
+      const rawMessage = String(data.raw_message ?? reply.raw_message ?? "");
+      return {
+        ...reply,
+        user_id: userId || reply.user_id,
+        raw_message: rawMessage,
+        raw_segments: Array.isArray(data.message) ? data.message : buildMessageSegments(rawMessage),
+      };
+    } catch (err) {
+      logger.warn("读取引用消息失败", { message_id: reply.message_id, error: String(err) });
+      return reply;
+    }
+  }
+
+  private sendNapCatMessage(
+    type: "private" | "group",
+    userId: string,
+    message: string,
+    groupId?: number
+  ): Promise<string> {
+    if (type === "private") {
+      return this.httpPost(`${napcatUrl}/send_private_msg`, {
+        user_id: Number(userId),
+        message,
+      });
+    }
+
+    if (type === "group" && groupId) {
+      return this.httpPost(`${napcatUrl}/send_group_msg`, {
+        group_id: groupId,
+        message,
+      });
+    }
+
+    throw new Error("发送群消息缺少 group_id");
   }
 
   private httpPost(url: string, body: unknown): Promise<string> {
@@ -247,29 +362,31 @@ export class QqAdapter {
       if (config.qq.napcatToken) {
         path += `?access_token=${config.qq.napcatToken}`;
       }
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Content-Length": String(Buffer.byteLength(data)),
-      };
-      const options = {
-        hostname: urlObj.hostname,
-        port: urlObj.port,
-        path,
-        method: "POST",
-        headers,
-      };
 
-      const req = http.request(options, (res) => {
-        let body = "";
-        res.on("data", (chunk) => (body += chunk));
-        res.on("end", () => {
-          if (res.statusCode && res.statusCode >= 400) {
-            reject(new Error(`HTTP ${res.statusCode}: ${body.substring(0, 300)}`));
-            return;
-          }
-          resolve(body);
-        });
-      });
+      const req = http.request(
+        {
+          hostname: urlObj.hostname,
+          port: urlObj.port,
+          path,
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": String(Buffer.byteLength(data)),
+          },
+        },
+        (res) => {
+          let responseBody = "";
+          res.on("data", (chunk) => (responseBody += chunk));
+          res.on("end", () => {
+            if (res.statusCode && res.statusCode >= 400) {
+              reject(new Error(`HTTP ${res.statusCode}: ${responseBody.substring(0, 300)}`));
+              return;
+            }
+            resolve(responseBody);
+          });
+        }
+      );
+
       req.setTimeout(15_000, () => {
         req.destroy(new Error("NapCat HTTP API 请求超时"));
       });
