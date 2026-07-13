@@ -1,12 +1,11 @@
-/**
- * QQ 个人管家 Bot 入口
+﻿/**
+ * 个人管家 Bot 入口。
  */
 
 import { validateConfig } from "./config";
 import "./tools";
 import { recordTokenUsage } from "./agent/token-usage";
-import { QqAdapter, QqMessage } from "./qq/adapter";
-import { MsgHeartbeat } from "./qq/connection";
+import { Platform, InternalMessage, MsgHeartbeat } from "./platform/output";
 import { getOrCreateSession } from "./router/data-index";
 import { MessageQueue } from "./router/message-queue";
 import { startProactive } from "./scheduler/proactive";
@@ -15,7 +14,7 @@ import { startDebugServer } from "./debug/server";
 
 async function main() {
   await cleanOldLogs();
-  logger.info("QQ 个人管家 Bot 启动中...");
+  logger.info("个人管家 Bot 启动中...");
 
   const errors = validateConfig();
   if (errors.length > 0) {
@@ -24,8 +23,8 @@ async function main() {
   }
 
   const queue = new MessageQueue();
-  const adapter = new QqAdapter({
-    onMessage: async (msg: QqMessage) => { queue.enqueue(msg); },
+  const platform = new Platform({
+    onMessage: async (msg: InternalMessage) => { queue.enqueue(msg); },
     onRecall: (uid: string, id: number) => { queue.recall(uid, id); },
     onTokenUsage: (userId: string, actor: string, usage: unknown) => {
       recordTokenUsage({
@@ -36,14 +35,14 @@ async function main() {
       });
     },
   });
-  queue.setAdapter(adapter);
+  queue.setAdapter(platform);
 
-  adapter.start();
+  platform.start();
 
-  const heartbeat = new MsgHeartbeat(adapter);
+  const heartbeat = new MsgHeartbeat(platform);
   heartbeat.start();
 
-  const stopProactive = startProactive(adapter);
+  const stopProactive = startProactive((msg) => queue.enqueue(msg));
   const stopDebugServer = startDebugServer();
 
   const shutdown = () => {
@@ -51,7 +50,7 @@ async function main() {
     heartbeat.stop();
     stopProactive();
     stopDebugServer?.();
-    adapter.stop();
+    platform.stop();
     process.exit(0);
   };
   process.on("SIGINT", shutdown);

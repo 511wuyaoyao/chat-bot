@@ -1,6 +1,6 @@
-/**
- * 日志工具
- * 控制台输出（带颜色 + 级别过滤）+ 文件持久化（始终 debug 级别 + 按天轮转 + 自动清理）
+﻿/**
+ * 鏃ュ織宸ュ叿锛氭帶鍒跺彴褰╄壊杈撳嚭涓庢枃浠舵寔涔呭寲銆?
+ * 鑷姩浠庤皟鐢ㄦ爤鎺ㄦ柇 src 涓€绾фā鍧楀悕锛屼笟鍔℃ā鍧楁棤闇€鎵嬪姩澹版槑鏉ユ簮銆?
  */
 
 import fs from "fs";
@@ -20,43 +20,54 @@ const LOG_LEVELS: Record<LogLevel, number> = {
   error: 3,
 };
 
-const COLORS: Record<LogLevel, string> = {
+const LEVEL_COLORS: Record<LogLevel, string> = {
   debug: "\x1b[36m",
   info: "\x1b[32m",
   warn: "\x1b[33m",
   error: "\x1b[31m",
 };
 
+const MODULE_COLORS = [
+  "\x1b[35m",
+  "\x1b[34m",
+  "\x1b[36m",
+  "\x1b[32m",
+  "\x1b[33m",
+  "\x1b[95m",
+  "\x1b[94m",
+  "\x1b[96m",
+];
+
 const RESET = "\x1b[0m";
 const DIM = "\x1b[90m";
 
-/** 控制台日志级别过滤 */
-const consoleLevel: LogLevel = (process.env.LOG_LEVEL as LogLevel) || "info";
-
-// ====== 文件日志（始终所有级别写入，不受 LOG_LEVEL 控制） ======
+const envLevel = process.env.LOG_LEVEL as LogLevel | undefined;
+const consoleLevel: LogLevel = envLevel && envLevel in LOG_LEVELS ? envLevel : "info";
 
 let currentDate = "";
 let writeQueue: Promise<void> = Promise.resolve();
 let dirReady = false;
 
-/** 根据当前日期生成日志文件路径，日期变化时自动切换 */
 function getLogPath(): string {
   const today = todayStr();
-  if (today !== currentDate) {
-    currentDate = today;
-  }
+  if (today !== currentDate) currentDate = today;
   return path.join(config.log.dir, `qqbot-${today}.log`);
 }
 
-/** 文件日志格式（本地时间）：2026-06-10 14:30:15.123 [INFO] msg {"key":"value"} */
-function formatFileLine(level: LogLevel, msg: string, extra?: Record<string, unknown>): string {
+function formatFileLine(
+  level: LogLevel,
+  moduleName: string,
+  userLabel: string,
+  msg: string,
+  extra?: Record<string, unknown>
+): string {
   const ms = String(new Date().getMilliseconds()).padStart(3, "0");
   const ts = `${nowISO()}.${ms}`;
-  const extraStr = extra ? ` ${JSON.stringify(extra)}` : "";
-  return `${ts} [${level.toUpperCase()}] ${msg}${extraStr}\n`;
+  const extraStr = extra ? ` ${safeJson(extra)}` : "";
+  return `${ts} [${userLabel}] [${level.toUpperCase()}] [${moduleName}] ${msg}${extraStr}
+`;
 }
 
-/** 确保日志目录存在（延迟初始化，首次写入时触发） */
 async function ensureDir(): Promise<void> {
   if (!dirReady) {
     await fs.promises.mkdir(config.log.dir, { recursive: true });
@@ -64,21 +75,23 @@ async function ensureDir(): Promise<void> {
   }
 }
 
-/** 串行追加一行到日志文件，写入失败只打 console.error */
-function appendToFile(level: LogLevel, msg: string, extra?: Record<string, unknown>) {
+function appendToFile(
+  level: LogLevel,
+  moduleName: string,
+  userLabel: string,
+  msg: string,
+  extra?: Record<string, unknown>
+): void {
   if (!config.log.fileEnabled) return;
-  const line = formatFileLine(level, msg, extra);
+  const line = formatFileLine(level, moduleName, userLabel, msg, extra);
   writeQueue = writeQueue
     .then(() => ensureDir())
     .then(() => fs.promises.appendFile(getLogPath(), line, "utf-8"))
     .catch((err: NodeJS.ErrnoException) => {
-      console.error(`[LOGGER] 写文件失败: ${err.message}`);
+      console.error(`[LOGGER] failed to write log file ${err.message}`);
     });
 }
 
-// ====== 清理过期日志 ======
-
-/** 删除超过 retentionDays 的日志文件（启动时调用一次） */
 export async function cleanOldLogs(): Promise<void> {
   try {
     await fs.promises.mkdir(config.log.dir, { recursive: true });
@@ -95,27 +108,117 @@ export async function cleanOldLogs(): Promise<void> {
         cleaned++;
       }
     }
-    if (cleaned > 0) {
-      console.log(`[LOGGER] 已清理 ${cleaned} 个过期日志文件`);
-    }
+
+    if (cleaned > 0) console.log(`[LOGGER] cleaned ${cleaned} expired log files`);
   } catch {
-    // 目录不存在等场景静默跳过
+    // Log cleanup must not block application startup.
   }
 }
 
-// ====== 核心 log 函数 ======
+function log(level: LogLevel, msg: string, extra?: Record<string, unknown>): void {
+  const moduleName = inferModuleName();
+  const userLabel = inferUserLabel(extra);
 
-function log(level: LogLevel, msg: string, extra?: Record<string, unknown>) {
-  // 控制台输出：受 LOG_LEVEL 过滤，带颜色
   if (LOG_LEVELS[level] >= LOG_LEVELS[consoleLevel]) {
     const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-    const color = COLORS[level];
-    const extraStr = extra ? ` ${DIM}${JSON.stringify(extra)}${RESET}` : "";
-    console.log(`${DIM}${time}${RESET} ${color}[${level.toUpperCase()}]${RESET} ${msg}${extraStr}`);
+    const userText = `${userColor(userLabel)}[${userLabel}]${RESET}`;
+    const levelText = `${LEVEL_COLORS[level]}[${level.toUpperCase()}]${RESET}`;
+    const moduleText = `${moduleColor(moduleName)}[${moduleName}]${RESET}`;
+    const extraStr = extra ? ` ${DIM}${safeJson(extra)}${RESET}` : "";
+    console.log(`${DIM}${time}${RESET} ${userText} ${levelText} ${moduleText} ${msg}${extraStr}`);
   }
 
-  // 文件输出：始终写入所有级别（包括 debug），不受 LOG_LEVEL 过滤
-  appendToFile(level, msg, extra);
+  appendToFile(level, moduleName, userLabel, msg, extra);
+}
+
+function inferModuleName(): string {
+  const stack = new Error().stack;
+  if (!stack) return "unknown";
+
+  for (const line of stack.split("\n").slice(1)) {
+    const filePath = extractFilePath(line);
+    if (!filePath) continue;
+
+    const normalized = filePath.replace(/\\/g, "/");
+    if (normalized.endsWith("/utils/logger.ts") || normalized.endsWith("/utils/logger.js")) {
+      continue;
+    }
+
+    const moduleName = moduleNameFromPath(normalized, "/src/") ?? moduleNameFromPath(normalized, "/dist/");
+    if (moduleName) return moduleName;
+  }
+
+  return "unknown";
+}
+
+function extractFilePath(stackLine: string): string | null {
+  const match = stackLine.match(/\(?([A-Za-z]:[/\\][^():]+|\/[^():]+):\d+:\d+\)?/);
+  return match?.[1] ?? null;
+}
+
+function moduleNameFromPath(filePath: string, rootMarker: "/src/" | "/dist/"): string | null {
+  const index = filePath.lastIndexOf(rootMarker);
+  if (index < 0) return null;
+
+  const rest = filePath.slice(index + rootMarker.length);
+  if (!rest || rest.startsWith("index.")) return "app";
+
+  const first = rest.split("/")[0];
+  return first || "unknown";
+}
+
+function moduleColor(moduleName: string): string {
+  let hash = 0;
+  for (const char of moduleName) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return MODULE_COLORS[hash % MODULE_COLORS.length];
+}
+
+function userColor(userLabel: string): string {
+  if (userLabel === "system") return DIM;
+  return "\x1b[2;36m";
+}
+
+function inferUserLabel(extra?: Record<string, unknown>): string {
+  const userId = findUserId(extra);
+  if (userId === null) return "system";
+  return `user:${userId}`;
+}
+
+function findUserId(value: unknown): string | null {
+  if (!isPlainRecord(value)) return null;
+
+  for (const key of ["user_id", "userId", "uid", "sender_user_id"]) {
+    const normalized = normalizeUserId(value[key]);
+    if (normalized !== null) return normalized;
+  }
+
+  for (const key of ["last", "message", "msg", "context"]) {
+    const nested = findUserId(value[key]);
+    if (nested !== null) return nested;
+  }
+
+  return null;
+}
+
+function normalizeUserId(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (typeof value === "number" || typeof value === "bigint") return String(value);
+  return null;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeJson(value: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return JSON.stringify({ unserializable: true });
+  }
 }
 
 export const logger = {
@@ -124,3 +227,4 @@ export const logger = {
   error: (msg: string, extra?: Record<string, unknown>) => log("error", msg, extra),
   debug: (msg: string, extra?: Record<string, unknown>) => log("debug", msg, extra),
 };
+

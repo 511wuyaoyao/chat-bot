@@ -1,8 +1,6 @@
-/**
- * Agent 主循环
- * session 层负责持久化历史；本轮运行期间维护临时 messages[]，确保动态 attention
- * 只注入一次，并位于当前用户消息之前。
- */
+﻿/**
+ * Agent 涓诲惊鐜? * session 灞傝礋璐ｆ寔涔呭寲鍘嗗彶锛涙湰杞繍琛屾湡闂寸淮鎶や复鏃?messages[]锛岀‘淇濆姩鎬?attention
+ * 鍙敞鍏ヤ竴娆★紝骞朵綅浜庡綋鍓嶇敤鎴锋秷鎭箣鍓嶃€? */
 
 import OpenAI from "openai";
 import { getLlmClient } from "./llm-client";
@@ -26,7 +24,7 @@ import {
   FALLBACK_ALL_DONE,
 } from "../prompt";
 
-export type ProgressCallback = (toolName: string, description: string) => void;
+export type ProgressCallback = (toolName: string, description: string) => void | Promise<void>;
 
 export async function agentLoop(
   sessionId: string,
@@ -35,42 +33,45 @@ export async function agentLoop(
   onProgress?: ProgressCallback,
   opts?: {
     systemPrompt?: string;
-    /** 自定义工具集，不传用全局 toolRegistry */
+    /** 鑷畾涔夊伐鍏烽泦锛屼笉浼犵敤鍏ㄥ眬 toolRegistry */
     tools?: ToolDefinition[];
-    /** 自定义工具执行器，和 tools 配套 */
-    executeTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
-    /** 最大迭代次数，不传用全局配置 */
+    /** 鑷畾涔夊伐鍏锋墽琛屽櫒锛屽拰 tools 閰嶅 */
+    executeTool?: (name: string, args: Record<string, unknown>, signal?: AbortSignal) => Promise<unknown>;
+    /** 鏈€澶ц凯浠ｆ鏁帮紝涓嶄紶鐢ㄥ叏灞€閰嶇疆 */
     maxIterations?: number;
-    /** 覆写模型 */
+    /** 瑕嗗啓妯″瀷 */
     model?: string;
-    /** 覆写 temperature，0 表示不覆写 */
+    /** 瑕嗗啓 temperature锛? 琛ㄧず涓嶈鍐?*/
     temperature?: number;
-    /** 覆写 maxTokens，0 表示不覆写 */
+    /** 瑕嗗啓 maxTokens锛? 琛ㄧず涓嶈鍐?*/
     maxTokens?: number;
-    /** TransactionEvent 归属名 */
+    /** TransactionEvent 褰掑睘鍚?*/
     actor?: "main-agent" | "topic-agent" | "exec-agent" | string;
-    /** 主会话 ID；子 Agent 可传父会话 ID */
+    /** 涓讳細璇?ID锛涘瓙 Agent 鍙紶鐖朵細璇?ID */
     mainSessionId?: string;
-    /** 是否持久化 tool_calls 到 context，默认 true */
+    /** 鏄惁鎸佷箙鍖?tool_calls 鍒?context锛岄粯璁?true */
     persistToolCalls?: boolean;
-    /** 覆写存储目录（用于 main/ topic/ 子目录场景），不传则使用默认 sessionDir(sessionId) */
+    /** 瑕嗗啓瀛樺偍鐩綍锛堢敤浜?main/ topic/ 瀛愮洰褰曞満鏅級锛屼笉浼犲垯浣跨敤榛樿 sessionDir(sessionId) */
     storageDir?: string;
-    /** 用户消息的 QQ message_id，用于撤回定位 */
+    /** 鐢ㄦ埛娑堟伅鐨?QQ message_id锛岀敤浜庢挙鍥炲畾浣?*/
     messageId?: number;
-    /** attention 运行时上下文，用于注入本轮消息来源等短期信息 */
+    /** attention 杩愯鏃朵笂涓嬫枃锛岀敤浜庢敞鍏ユ湰杞秷鎭潵婧愮瓑鐭湡淇℃伅 */
     attentionContext?: AttentionRuntimeContext;
+    /** Abort current agent run on recall. */
+    signal?: AbortSignal;
   }
 ): Promise<string> {
   const client = getLlmClient();
   const maxIterations = opts?.maxIterations ?? config.agent.maxIterations;
   const tools = opts?.tools ?? toolRegistry.getDefinitions();
+  const signal = opts?.signal;
   const execute = opts?.executeTool ?? ((name, args) => toolRegistry.execute(name, args, userId));
 
   const baseDir = opts?.storageDir;
   const actor = opts?.actor ?? "agent";
   const mainSessionId = opts?.mainSessionId ?? mainSessionIdOf(sessionId);
 
-  // 确保 session 目录存在
+  // 纭繚 session 鐩綍瀛樺湪
   ensureDir(sessionId, baseDir);
   emitTransactionEvent({
     type: "agent.started",
@@ -80,10 +81,11 @@ export async function agentLoop(
     mainSessionId,
   });
 
-  /** 检查当前消息是否已被撤回，若是则回滚并中止 */
+  /** 妫€鏌ュ綋鍓嶆秷鎭槸鍚﹀凡琚挙鍥烇紝鑻ユ槸鍒欏洖婊氬苟涓 */
   function checkRecalled(): boolean {
-    if (opts?.messageId && isRecalled(opts.messageId)) {
-      recallUserMessage(sessionId, opts.messageId, baseDir);
+    const recalled = opts?.messageId !== undefined && isRecalled(opts.messageId);
+    if (signal?.aborted || recalled) {
+      if (opts?.messageId !== undefined) recallUserMessage(sessionId, opts.messageId, baseDir);
       return true;
     }
     return false;
@@ -103,18 +105,22 @@ export async function agentLoop(
   const userMsg: StoredMessage = { role: "user", content: text };
   messages.push(userMsg);
 
-  // 组装完本轮 API 输入后再持久化用户消息，避免 latest user 出现在 attention 之前。
-  sessionSet(sessionId, { role: "user", content: text, message_id: opts?.messageId }, baseDir);
+  // Persist user message after attention is assembled.
+  sessionSet(sessionId, {
+    role: "user",
+    content: text,
+    message_id: opts?.messageId === undefined ? undefined : String(opts.messageId),
+  }, baseDir);
 
   if (checkRecalled()) return "";
 
   for (let i = 0; i < maxIterations; i++) {
-    logger.debug(`Agent loop 第 ${i + 1}/${maxIterations} 轮`, { userId });
+    logger.debug(`Agent loop round ${i + 1}/${maxIterations}`, { userId });
 
     let response: OpenAI.Chat.Completions.ChatCompletion;
-    const model = opts?.model || config.deepseek.model;
-    const temperature = opts?.temperature || config.agent.temperature;
-    const maxTokens = opts?.maxTokens || config.agent.maxTokens;
+    const model = opts?.model ?? config.deepseek.model;
+    const temperature = opts?.temperature ?? config.agent.temperature;
+    const maxTokens = opts?.maxTokens ?? config.agent.maxTokens;
     const traceId = createDebugTrace({
       actor,
       userId,
@@ -141,9 +147,13 @@ export async function agentLoop(
         temperature,
         max_tokens: maxTokens,
         ...thinkParams(),
-      } as any);
+      } as any, signal ? { signal } : undefined);
     } catch (err) {
-      logger.error(`API 调用失败 (round ${i + 1})`, { error: String(err) });
+      if (checkRecalled()) {
+        finishDebugTrace(traceId, { status: "failed", error: "aborted" });
+        return "";
+      }
+      logger.error(`API 璋冪敤澶辫触 (round ${i + 1})`, { error: String(err) });
       finishDebugTrace(traceId, { status: "failed", error: String(err) });
       return qaFallback(text, get(sessionId, userId, { baseDir }));
     }
@@ -162,14 +172,14 @@ export async function agentLoop(
 
     const choice = response.choices[0];
     if (!choice) {
-      logger.warn("AI 响应为空", { userId });
-      finishDebugTrace(traceId, { status: "failed", error: "AI 响应为空" });
+      logger.warn("AI 鍝嶅簲涓虹┖", { userId });
+      finishDebugTrace(traceId, { status: "failed", error: "AI 鍝嶅簲涓虹┖" });
       return qaFallback(text, get(sessionId, userId, { baseDir }));
     }
 
     const msg = choice.message;
 
-    // 无工具调用 → 持久化并返回最终回复
+    // Return final reply when no tool call is requested.
     if (!msg.tool_calls || msg.tool_calls.length === 0) {
       if (checkRecalled()) return "";
       const reply = msg.content || FALLBACK_EMPTY_REPLY;
@@ -195,9 +205,9 @@ export async function agentLoop(
       return reply;
     }
 
-    // 工具调用 → 持久化 assistant 消息 + tool 结果，下一轮 get() 自然包含
+    // 宸ュ叿璋冪敤 鈫?鎸佷箙鍖?assistant 娑堟伅 + tool 缁撴灉锛屼笅涓€杞?get() 鑷劧鍖呭惈
     if (checkRecalled()) return "";
-    logger.debug(`AI 调用了 ${msg.tool_calls.length} 个工具`, {
+    logger.debug(`AI requested ${msg.tool_calls.length} tool calls`, {
       userId,
       tools: msg.tool_calls.map((t) => t.function.name),
     });
@@ -233,12 +243,15 @@ export async function agentLoop(
         addDebugTraceEvent(traceId, "tool.started", { toolName, args });
 
         const progressText = TOOL_PROGRESS[toolName];
+        if (checkRecalled()) return "";
         if (onProgress && progressText) {
           const detail = args.query || args.title || args.titleOrId || "";
-          onProgress(toolName, detail ? `${progressText} ${detail}` : progressText);
+          await onProgress(toolName, detail ? `${progressText} ${detail}` : progressText);
         }
+        if (checkRecalled()) return "";
 
-        toolResult = await execute(toolName, args);
+        toolResult = await execute(toolName, args, signal);
+        if (checkRecalled()) return "";
         emitTransactionEvent({
           type: "tool.completed",
           actor,
@@ -251,8 +264,8 @@ export async function agentLoop(
         });
         addDebugTraceEvent(traceId, "tool.completed", { toolName, args, result: toolResult });
       } catch (err) {
-        toolResult = { error: `工具调用失败：${String(err)}` };
-        logger.warn(`工具 ${toolName} 执行失败`, { error: String(err) });
+        toolResult = { error: `tool call failed: ${String(err)}` };
+        logger.warn(`tool ${toolName} execution failed`, { error: String(err) });
         emitTransactionEvent({
           type: "tool.failed",
           actor,
@@ -285,8 +298,8 @@ export async function agentLoop(
     }
   }
 
-  // 达到最大轮次 → 不补 system，直接兜底
-  logger.warn(`Agent loop 达到最大迭代次数 ${maxIterations}`, { userId });
+  // Return fallback after max iterations.
+  logger.warn(`Agent loop reached max iterations ${maxIterations}`, { userId });
   emitTransactionEvent({
     type: "agent.failed",
     actor,
@@ -306,7 +319,7 @@ function structuredCloneSafe<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-/** 从环境变量构建 thinking 参数 */
+/** 浠庣幆澧冨彉閲忔瀯寤?thinking 鍙傛暟 */
 function thinkParams(): Record<string, unknown> {
   const mode = process.env.AGENT_THINK_MODE || "non-thinking";
   if (mode === "non-thinking") return { thinking: { type: "disabled" } };
@@ -315,3 +328,4 @@ function thinkParams(): Record<string, unknown> {
     reasoning_effort: mode === "thinking_max" ? "max" : "high",
   };
 }
+

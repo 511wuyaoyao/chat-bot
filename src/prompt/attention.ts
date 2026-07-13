@@ -5,10 +5,6 @@
 
 export function buildAttentionSystemContent(attentionText: string): string {
   return [
-    "【内部上下文】",
-    "以下内容只用于理解用户长期记忆、当前时间和待处理话题。",
-    "不要复述，不要说明来源，不要说你看到了目录、文件、上下文或内部记忆。",
-    "",
     attentionText,
   ].join("\n");
 }
@@ -25,7 +21,6 @@ export interface GroupChatAttentionPromptInput {
 
 export function buildGroupChatAttentionPrompt(input: GroupChatAttentionPromptInput): string {
   const lines = [
-    "【群聊消息上下文】",
     "当前消息来自群聊。",
     `群号：${input.groupId ?? "未知"}`,
     `当前发言人名称：${input.speakerName || "未知"}`,

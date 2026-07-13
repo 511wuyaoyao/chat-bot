@@ -2,6 +2,8 @@
  * 工具相关消息 — 进度提示 + 使用指南
  */
 
+import type { ToolDefinition } from "../agent/tool-registry";
+
 export const TOOL_PROGRESS: Record<string, string> = {
   add_entry: "正在记录",
   update_entry: "正在更新",
@@ -59,3 +61,39 @@ export const PROMPT_REMINDER_HANDLING = `
 模糊不清 → 追问确认意图
 
 以上必须通过工具调用完成，回复简洁。`;
+
+export function formatToolDefinitions(tools: ToolDefinition[]): string {
+  if (tools.length === 0) return "- 当前没有注入工具定义。";
+
+  return tools.map((tool) => {
+    const fn = tool.function;
+    const required = new Set(fn.parameters.required || []);
+    const params = Object.entries(fn.parameters.properties || {})
+      .map(([name, schema]) => {
+        const desc = paramDescription(schema);
+        const mark = required.has(name) ? "必填" : "可选";
+        return `  - ${name}（${mark}）：${desc}`;
+      });
+
+    return [
+      `- ${fn.name}：${fn.description}`,
+      params.length > 0 ? params.join("\n") : "  - 无参数",
+    ].join("\n");
+  }).join("\n");
+}
+
+function paramDescription(schema: unknown): string {
+  if (!schema || typeof schema !== "object") return "无描述";
+  const obj = schema as { description?: unknown; enum?: unknown; type?: unknown };
+  const parts: string[] = [];
+  if (typeof obj.description === "string" && obj.description.trim()) {
+    parts.push(obj.description.trim());
+  }
+  if (Array.isArray(obj.enum) && obj.enum.length > 0) {
+    parts.push(`可选值：${obj.enum.map(String).join(" / ")}`);
+  }
+  if (parts.length === 0 && typeof obj.type === "string") {
+    parts.push(`类型：${obj.type}`);
+  }
+  return parts.join("；") || "无描述";
+}

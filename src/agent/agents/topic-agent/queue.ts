@@ -11,6 +11,8 @@ export interface DialogueItem {
   mainSessionId: string;
   userMessage: string;
   assistantReply: string;
+  userMessageId: string;
+  assistantMessageId?: string;
 }
 
 const pending: DialogueItem[] = [];

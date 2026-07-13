@@ -9,7 +9,10 @@ import path from "path";
 import { agentLoop, ProgressCallback } from "../../agent-loop";
 import { AttentionRuntimeContext } from "../../attention";
 import { getMainTools, executeMainTool } from "./tools";
-import { PROMPT_MAIN } from "../../../prompt";
+import { buildPromptMain } from "../../../prompt";
+import { latestAssistantUsageSince } from "../../../router/session/set";
+import { maybeCompactContext } from "../../../router/session/context-manager";
+import { config } from "../../../config";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
@@ -19,18 +22,38 @@ export async function mainAgent(
   text: string,
   onProgress?: ProgressCallback,
   messageId?: number,
-  attentionContext?: AttentionRuntimeContext
+  attentionContext?: AttentionRuntimeContext,
+  signal?: AbortSignal
 ): Promise<string> {
   const storageDir = path.join(DATA_ROOT, userId, "session", sessionId, "main");
+  const startedAt = Date.now();
+  const tools = getMainTools();
 
-  return agentLoop(sessionId, userId, text, onProgress, {
-    systemPrompt: PROMPT_MAIN,
-    tools: getMainTools(),
-    executeTool: (name, args) => executeMainTool(name, args, userId, sessionId, onProgress),
+  const reply = await agentLoop(sessionId, userId, text, onProgress, {
+    systemPrompt: buildPromptMain(tools),
+    tools,
+    executeTool: (name, args, toolSignal) => executeMainTool(name, args, userId, sessionId, onProgress, toolSignal),
     actor: "main-agent",
     mainSessionId: sessionId,
     storageDir,
+    maxIterations: config.main.maxIterations,
+    model: config.main.model,
+    temperature: config.main.temperature,
+    maxTokens: config.main.maxTokens,
     messageId,
     attentionContext,
+    signal,
   });
+
+  const usage = latestAssistantUsageSince(sessionId, startedAt, storageDir);
+  if (usage) {
+    maybeCompactContext({
+      sessionId,
+      actor: "main-agent",
+      usage,
+      baseDir: storageDir,
+    });
+  }
+
+  return reply;
 }

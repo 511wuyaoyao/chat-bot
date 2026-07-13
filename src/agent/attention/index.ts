@@ -1,11 +1,5 @@
-/**
- * 注意力层 — 组装长期记忆 → 本轮上下文的全部信息源
- * 每次 Agent 循环调用 buildAttention(userId)，注入到对话上下文
- *
- * 四个来源：
- *   1. 目录树（folder_tree） — 用户所有数据的树状视图
- *   2. 当前时间（time）
- *   3. 话题队列（topic_queue） — Topic Agent 提炼的未消费话题
+﻿/**
+ * 注意力层入口：组装长期记忆和本轮运行上下文。
  */
 
 import { folderTreeContext } from "./folder_tree";
@@ -15,7 +9,7 @@ import { transactionEventAttentionText } from "../transaction-event";
 import { groupChatAttentionText, GroupChatAttentionInput } from "./group_chat";
 
 export interface AttentionRuntimeContext {
-  qqMessage?: GroupChatAttentionInput;
+  platformMessage?: GroupChatAttentionInput;
 }
 
 export function buildAttention(
@@ -39,8 +33,8 @@ export function buildAttention(
     if (transactions) parts.push(transactions);
   }
 
-  const groupChat = runtimeContext?.qqMessage
-    ? groupChatAttentionText(runtimeContext.qqMessage)
+  const groupChat = runtimeContext?.platformMessage
+    ? groupChatAttentionText(runtimeContext.platformMessage)
     : undefined;
   if (groupChat) parts.push(groupChat);
 

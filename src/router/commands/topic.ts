@@ -9,8 +9,14 @@ import { getOrCreateSession } from "../data-index";
 import { agentLoop } from "../../agent/agent-loop";
 import { pushTopic } from "../../agent/attention/topic_queue";
 import { toolRegistry, ToolDefinition } from "../../agent/tool-registry";
-import { PROMPT_TOPIC } from "../../prompt";
+import { buildPromptTopic } from "../../prompt";
 import { logger } from "../../utils/logger";
+import {
+  latestAssistantUsageSince,
+  updateLatestAssistantCompactionHintsSince,
+} from "../session/set";
+import { maybeCompactContext } from "../session/context-manager";
+import type { StoredMessage } from "../session/utils/types";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
@@ -48,11 +54,14 @@ commandRegistry.register({
 
     const sessionId = `${mainSid}_topic`;
     const storageDir = path.join(DATA_ROOT, userId, "session", mainSid, "topic");
+    const startedAt = Date.now();
+    const compactionHints: NonNullable<StoredMessage["compactionHints"]> = {};
+    const tools = getTools();
 
     try {
       const reply = await agentLoop(sessionId, userId, topicText, undefined, {
-        systemPrompt: PROMPT_TOPIC,
-        tools: getTools(),
+        systemPrompt: buildPromptTopic(tools),
+        tools,
         actor: "topic-agent",
         mainSessionId: mainSid,
         storageDir,
@@ -64,11 +73,27 @@ commandRegistry.register({
               String(args.persist) as "yes" | "ask" | "no",
               args.askMessageId as number | undefined
             );
+            compactionHints.topicWritten = true;
             return { added, topic: args.topic, persist: args.persist };
           }
-          return toolRegistry.execute(name, args, userId);
+          const result = await toolRegistry.execute(name, args, userId);
+          if (DATA_MUTATION_TOOLS.has(name)) {
+            compactionHints.dataMutated = true;
+          }
+          return result;
         },
       });
+
+      updateLatestAssistantCompactionHintsSince(sessionId, startedAt, compactionHints, storageDir);
+      const usage = latestAssistantUsageSince(sessionId, startedAt, storageDir);
+      if (usage) {
+        maybeCompactContext({
+          sessionId,
+          actor: "topic-agent",
+          usage,
+          baseDir: storageDir,
+        });
+      }
       return reply;
     } catch (err) {
       logger.warn("Topic 命令失败", { error: String(err) });
@@ -76,3 +101,13 @@ commandRegistry.register({
     }
   },
 });
+
+const DATA_MUTATION_TOOLS = new Set([
+  "add_entry",
+  "update_entry",
+  "delete_entry",
+  "create_folder",
+  "update_folder",
+  "delete_folder",
+  "delete_file",
+]);

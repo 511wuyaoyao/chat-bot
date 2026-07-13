@@ -6,8 +6,10 @@
 import express from "express";
 import { config } from "../config";
 import { logger } from "../utils/logger";
-import { clearDebugTraces, getDebugTrace, listDebugTraces } from "./trace-store";
+import { clearDebugTraces, debugTraceStoreStats, getDebugTrace, listDebugTraces } from "./trace-store";
 import { debugPage } from "./page";
+import { getDebugSessionDetail, listDebugSessions } from "./session-browser";
+import { debugDetailCache } from "./detail-cache";
 
 export function startDebugServer(): (() => void) | null {
   if (!config.debug.enabled) return null;
@@ -35,6 +37,30 @@ export function startDebugServer(): (() => void) | null {
   app.delete("/debug/traces", (_req, res) => {
     clearDebugTraces();
     res.json({ success: true });
+  });
+
+  app.get("/debug/sessions", (_req, res) => {
+    res.json(listDebugSessions());
+  });
+
+  app.get("/debug/sessions/:userId/:sessionId/:actor", (req, res) => {
+    const detail = getDebugSessionDetail(
+      req.params.userId,
+      req.params.sessionId,
+      req.params.actor
+    );
+    if (!detail) {
+      res.status(404).json({ error: "session context not found" });
+      return;
+    }
+    res.json(detail);
+  });
+
+  app.get("/debug/cache", (_req, res) => {
+    res.json({
+      detail: debugDetailCache.stats(),
+      trace: debugTraceStoreStats(),
+    });
   });
 
   const server = app.listen(config.debug.port, "127.0.0.1", () => {

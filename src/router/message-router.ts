@@ -1,14 +1,15 @@
-/**
- * 消息网关 — main-agent 对话路由
- * topic-agent 通过独立队列消费，不在此层直接调用
+﻿/**
+ * 消息网关：负责命令拦截、main-agent 调用和 topic 入队。
  */
 
-import { QqMessage } from "../qq/adapter";
+import path from "path";
+import { InternalMessage } from "../platform/output";
 import { mainAgent } from "../agent/agents/main-agent/index";
 import { getOrCreateSession, switchSession } from "./data-index";
 import { enqueueDialogue } from "../agent/agents/topic-agent/queue";
 import { ProgressCallback } from "../agent/agent-loop";
 import { set as archiveSet } from "./archive/set";
+import { updateLatestAssistantMessageId } from "./session/set";
 import { logger } from "../utils/logger";
 import { commandRegistry } from "./commands/registry";
 
@@ -18,68 +19,81 @@ import "./commands/admin";
 import "./commands/topic";
 import "./commands/token";
 
-// 向后兼容
 export { getOrCreateSession };
 export { switchSession };
 
+export interface MessageRouterResult {
+  reply: string | null;
+  onReplySent?: (messageId: number | null) => void;
+}
+
 export async function messageRouter(
-  msg: QqMessage,
+  msg: InternalMessage,
   onProgress?: ProgressCallback,
-  /** topic-agent 发消息的通道 */
-  sendMessage?: (text: string) => Promise<number | null>
-): Promise<string | null> {
+  signal?: AbortSignal
+): Promise<MessageRouterResult> {
   const userId = String(msg.user_id);
   const raw = msg.raw_message;
-  if (!raw) return null;
+  if (!raw) return { reply: null };
 
   const sid = getOrCreateSession(userId);
 
-  // 指令
   const cmd = commandRegistry.match(raw);
   if (cmd) {
-    logger.debug("指令执行", { userId, command: cmd.handler.name });
-    return cmd.handler.execute(userId, cmd.args);
+    logger.debug("命令执行", { userId, command: cmd.handler.name });
+    return { reply: await cmd.handler.execute(userId, cmd.args) };
   }
 
   const userPrompt = buildUserPrompt(msg);
 
-  // 正常对话 → 主 Agent
   const reply = await mainAgent(sid, userId, userPrompt, onProgress, msg.message_id, {
-    qqMessage: {
+    platformMessage: {
       messageType: msg.message_type,
       groupId: msg.group_id,
       userId,
       sender: msg.sender,
       category: msg.category,
     },
-  });
+  }, signal);
 
-  // 归档 assistant 回复（user 消息已在 message-queue 入队时归档）
   if (reply) {
     archiveSet(sid, { role: "assistant", content: reply });
   }
 
-  // 主 Agent 回复后 → 对话轮次入队，topic-agent 独立消费
-  if (reply && sendMessage) {
-    enqueueDialogue({
-      userId,
-      mainSessionId: sid,
-      userMessage: userPrompt,
-      assistantReply: reply,
-    });
-  }
+  return {
+    reply,
+    onReplySent: (assistantMessageId) => {
+      const assistantMessageIdText = assistantMessageId === null ? undefined : String(assistantMessageId);
+      if (assistantMessageIdText) {
+        updateLatestAssistantMessageId(sid, assistantMessageIdText, mainContextDir(userId, sid));
+      }
 
-  return reply;
+      if (reply) {
+        enqueueDialogue({
+          userId,
+          mainSessionId: sid,
+          userMessage: userPrompt,
+          assistantReply: reply,
+          userMessageId: String(msg.message_id),
+          assistantMessageId: assistantMessageIdText,
+        });
+      }
+    },
+  };
 }
 
-function buildUserPrompt(msg: QqMessage): string {
+function mainContextDir(userId: string, sessionId: string): string {
+  return path.join(process.cwd(), "data", userId, "session", sessionId, "main");
+}
+
+function buildUserPrompt(msg: InternalMessage): string {
   const currentMessage = msg.raw_message.trim() || "用户当前未输入额外文本。";
   const quotedMessage = msg.reply?.parsed_message?.trim();
   if (!quotedMessage) return msg.raw_message.trim();
 
   return [
     "用户引用了下面这条消息：",
-    `发送者 QQ：${msg.reply?.user_id}`,
+    `发送者：${msg.reply?.user_id}`,
     `消息 ID：${msg.reply?.message_id}`,
     "引用内容：",
     quotedMessage,

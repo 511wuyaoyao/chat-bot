@@ -163,7 +163,8 @@ export function get(
   opts?: { systemPrompt?: string; baseDir?: string }
 ): StoredMessage[] {
   const history = getCache(sessionId, opts?.baseDir);
-  const safeHistory = sanitizeHistory(sessionId, history);
+  const activeHistory = history.filter((msg) => msg.deleted !== true);
+  const safeHistory = sanitizeHistory(sessionId, activeHistory);
   const windowedHistory = windowHistory(safeHistory);
   const systemContent = opts?.systemPrompt ?? "你是用户的个人助理。请根据上下文自然回复。";
 

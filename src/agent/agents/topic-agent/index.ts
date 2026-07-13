@@ -10,8 +10,16 @@ import { agentLoop } from "../../agent-loop";
 import { pushTopic } from "../../attention/topic_queue";
 import { toolRegistry, ToolDefinition } from "../../tool-registry";
 import { logger } from "../../../utils/logger";
-import { PROMPT_TOPIC } from "../../../prompt";
+import { buildPromptTopic } from "../../../prompt";
+import { config } from "../../../config";
 import type { DialogueItem } from "./queue";
+import {
+  latestAssistantUsageSince,
+  updateLatestAssistantCompactionHintsSince,
+  updateMessageTopicByMessageIds,
+} from "../../../router/session/set";
+import { maybeCompactContext } from "../../../router/session/context-manager";
+import type { StoredMessage } from "../../../router/session/utils/types";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
@@ -56,27 +64,71 @@ export async function topicAgent(
     const text = buildPassiveAnalysisText(dialogue);
 
     const storageDir = path.join(DATA_ROOT, userId, "session", mainSessionId, "topic");
+    const startedAt = Date.now();
+    const compactionHints: NonNullable<StoredMessage["compactionHints"]> = {};
+    const tools = getTopicTools();
 
     await agentLoop(sessionId, userId, text, undefined, {
-      systemPrompt: PROMPT_TOPIC,
-      tools: getTopicTools(),
+      systemPrompt: buildPromptTopic(tools),
+      tools,
       actor: "topic-agent",
       mainSessionId,
       storageDir,
+      maxIterations: config.topic.maxIterations,
+      model: config.topic.model,
+      temperature: config.topic.temperature,
+      maxTokens: config.topic.maxTokens,
       executeTool: async (name, args) => {
         if (name === "push_topic") {
+          const topic = String(args.topic);
           const added = pushTopic(
             userId, mainSessionId,
-            String(args.topic), String(args.source), String(args.summary),
+            topic, String(args.source), String(args.summary),
             String(args.persist) as "yes" | "ask" | "no",
             args.askMessageId as number | undefined
           );
+          const topicTargetIds = [
+            dialogue.userMessageId,
+            dialogue.assistantMessageId,
+          ].filter((id): id is string => Boolean(id));
+          updateMessageTopicByMessageIds(
+            mainSessionId,
+            topicTargetIds,
+            topic,
+            path.join(DATA_ROOT, userId, "session", mainSessionId, "main")
+          );
+          compactionHints.topicWritten = true;
           return { added, topic: args.topic, persist: args.persist };
         }
-        return toolRegistry.execute(name, args, userId);
+        const result = await toolRegistry.execute(name, args, userId);
+        if (DATA_MUTATION_TOOLS.has(name)) {
+          compactionHints.dataMutated = true;
+        }
+        return result;
       },
     });
+
+    updateLatestAssistantCompactionHintsSince(sessionId, startedAt, compactionHints, storageDir);
+    const usage = latestAssistantUsageSince(sessionId, startedAt, storageDir);
+    if (usage) {
+      maybeCompactContext({
+        sessionId,
+        actor: "topic-agent",
+        usage,
+        baseDir: storageDir,
+      });
+    }
   } catch (err) {
     logger.debug("Topic Agent 失败", { error: String(err) });
   }
 }
+
+const DATA_MUTATION_TOOLS = new Set([
+  "add_entry",
+  "update_entry",
+  "delete_entry",
+  "create_folder",
+  "update_folder",
+  "delete_folder",
+  "delete_file",
+]);

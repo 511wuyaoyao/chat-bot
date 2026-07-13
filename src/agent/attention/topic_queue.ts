@@ -1,5 +1,6 @@
 ﻿/**
- * 璇濋闃熷垪 鈥?鍐呭瓨缂撳瓨 + 鍘熷瓙鎸佷箙鍖? * 瀛樺偍璺緞锛歞ata/{userId}/session/{mainSessionId}/topic-queue.json
+ * 话题队列：内存缓存 + 原子持久化。
+ * 存储路径：data/{userId}/topic-queue.json
  */
 
 import fs from "fs";
@@ -22,18 +23,19 @@ export interface TopicEntry {
 
 const cache = new Map<string, TopicEntry[]>();
 
-function cacheKey(userId: string, sessionId: string): string {
-  return `${userId}:${sessionId}`;
+function cacheKey(userId: string): string {
+  return userId;
 }
 
-function filePath(userId: string, sessionId: string): string {
-  return path.join(DATA_ROOT, userId, "session", sessionId, "topic-queue.json");
+function filePath(userId: string): string {
+  return path.join(DATA_ROOT, userId, "topic-queue.json");
 }
 
 function load(userId: string, sessionId: string): TopicEntry[] {
-  const key = cacheKey(userId, sessionId);
+  void sessionId;
+  const key = cacheKey(userId);
   if (cache.has(key)) return cache.get(key)!;
-  const fp = filePath(userId, sessionId);
+  const fp = filePath(userId);
   if (!fs.existsSync(fp)) {
     cache.set(key, []);
     return [];
@@ -49,13 +51,14 @@ function load(userId: string, sessionId: string): TopicEntry[] {
 }
 
 function save(userId: string, sessionId: string, data: TopicEntry[]): void {
-  const fp = filePath(userId, sessionId);
+  void sessionId;
+  const fp = filePath(userId);
   const dir = path.dirname(fp);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   const tmp = fp + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf-8");
   fs.renameSync(tmp, fp);
-  cache.set(cacheKey(userId, sessionId), data);
+  cache.set(cacheKey(userId), data);
 }
 
 // ====== 瀵瑰鎺ュ彛 ======
@@ -120,4 +123,8 @@ export function topicQueueText(userId: string, sessionId: string): string {
       ? `非活跃话题（仅用于避免重复，不要主动延续）：\n${inactiveLines.join("\n")}`
       : "",
   ].filter(Boolean).join("\n");
+}
+
+export function clearTopicQueueCacheForTest(): void {
+  cache.clear();
 }

@@ -34,6 +34,13 @@ export interface DebugTrace {
   events: DebugTraceEvent[];
 }
 
+export interface DebugTraceStoreStats {
+  maxBytes: number;
+  totalBytes: number;
+  itemCount: number;
+  maxKeep: number;
+}
+
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 const TRACE_FILE = path.join(DATA_ROOT, "debug-traces.json");
 
@@ -47,9 +54,29 @@ function keepCount(): number {
   return Math.max(1, config.debug.traceMaxKeep);
 }
 
+function maxBytes(): number {
+  return Math.max(0, config.debug.traceMaxBytes);
+}
+
+function traceByteSize(trace: DebugTrace): number {
+  return Buffer.byteLength(JSON.stringify(trace), "utf8");
+}
+
+function totalTraceBytes(): number {
+  return traces.reduce((sum, trace) => sum + traceByteSize(trace), 0);
+}
+
 function trim(): void {
   const keep = keepCount();
   if (traces.length > keep) traces.splice(0, traces.length - keep);
+  const limit = maxBytes();
+  if (limit <= 0) {
+    traces.splice(0, traces.length);
+    return;
+  }
+  while (traces.length > 1 && totalTraceBytes() > limit) {
+    traces.shift();
+  }
 }
 
 function loadPersistedTraces(): DebugTrace[] {
@@ -126,4 +153,13 @@ export function getDebugTrace(id: string): DebugTrace | null {
 export function clearDebugTraces(): void {
   traces.splice(0, traces.length);
   persist();
+}
+
+export function debugTraceStoreStats(): DebugTraceStoreStats {
+  return {
+    maxBytes: maxBytes(),
+    totalBytes: totalTraceBytes(),
+    itemCount: traces.length,
+    maxKeep: keepCount(),
+  };
 }

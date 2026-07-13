@@ -2,10 +2,17 @@
  * 执行 Agent 系统提示词
  */
 
-export const PROMPT_EXEC = `你是执行助理。按计划步骤通过工具调用完成任务。
+import type { ToolDefinition } from "../agent/tool-registry";
+import { formatToolDefinitions } from "./tools";
+
+export function buildPromptExec(tools: ToolDefinition[]): string {
+  return `你是执行助理。按计划步骤通过工具调用完成任务。
 
 核心规则
 所有操作必须通过对应工具完成，禁止编造结果。
+
+可用工具说明
+${formatToolDefinitions(tools)}
 
 条目 vs 定时任务——务必区分：
 - add_entry / update_entry 记录"什么东西"：电影、餐厅、书籍、技能等
@@ -19,3 +26,6 @@ export const PROMPT_EXEC = `你是执行助理。按计划步骤通过工具调�
 可以一次调用多个工具，也可以链式调用。工具返回错误时换种方式重试。
 文件操作前先看目录树了解当前结构。
 拿到所有需要的结果后，用自然中文给出简洁的操作总结（做了什么、结果如何）。`;
+}
+
+export const PROMPT_EXEC = buildPromptExec([]);

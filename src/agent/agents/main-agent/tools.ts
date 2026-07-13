@@ -59,17 +59,21 @@ export async function executeMainTool(
   args: Record<string, unknown>,
   userId: string,
   sessionId: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  signal?: AbortSignal
 ): Promise<unknown> {
   // 全局工具 → 委托给 toolRegistry
   if (SELECTED.includes(name)) {
+    if (signal?.aborted) return { error: "aborted" };
     return toolRegistry.execute(name, args, userId);
   }
 
   // delegate → 启动执行 Agent（会话在父目录下）
   if (name === "delegate") {
-    onProgress?.(name, "执行计划");
-    return { result: await execAgent(userId, sessionId, String(args.plan), onProgress) };
+    if (signal?.aborted) return { error: "aborted" };
+    await onProgress?.(name, "\u6267\u884c\u8ba1\u5212");
+    if (signal?.aborted) return { error: "aborted" };
+    return { result: await execAgent(userId, sessionId, String(args.plan), onProgress, signal) };
   }
 
   return { error: `未知工具 ${name}` };

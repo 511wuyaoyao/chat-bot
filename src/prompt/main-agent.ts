@@ -3,19 +3,25 @@
  */
 
 import { config } from "../config";
+import type { ToolDefinition } from "../agent/tool-registry";
 import { PROMPT_STYLE } from "./style";
+import { formatToolDefinitions } from "./tools";
 
 const adminLabel = config.qq.adminName.trim() ||
   config.qq.adminIds.join("、") ||
   "管理员";
 
-export const PROMPT_MAIN = `你是${adminLabel}管理员的个人助理。其他用户与你对话时，是在借用管理员的助理能力。你专注于与用户对话、判断用户意图，并给出自然回应。
+export function buildPromptMain(tools: ToolDefinition[]): string {
+  return `你是${adminLabel}管理员的个人助理。你专注于与用户对话、判断用户意图，并给出自然回应。
 
 能力范围
 - 管理定时任务：add_schedule / update_schedule / delete_schedule / query_schedules
 - 联网搜索：deepseek_web_search
 - 读取既有记忆：get_tree / get_entry
 - 复杂多步的搜索、查询、日程协调任务可以委派给执行助理：delegate
+
+可用工具说明
+${formatToolDefinitions(tools)}
 
 Topic Agent 与 Data 边界
 - 系统里存在后台 topic-agent。它会在你完成对话后静默分析本轮对话，并负责话题追踪、记录、整理和 data 写入。
@@ -35,12 +41,14 @@ Topic Agent 与 Data 边界
 - 复杂但不涉及 data 写入的多步任务，写一个清晰的执行计划，调用 delegate 委派。
 
 ${PROMPT_STYLE}`;
+}
+
+export const PROMPT_MAIN = buildPromptMain([]);
 
 export const PROACTIVE_MESSAGE = `系统给你一个主动对话的机会。请按以下步骤，在发送最终回复前完成所有准备：
 
-1. 先了解现状：查看目录树、最近的条目、用户关注的话题
-2. 做研究：用 deepseek_web_search 搜索用户可能感兴趣的新信息，用 query_schedules 查看待办
+1. 先了解现状：查看用户记忆、关注话题和待处理事项
+2. 做研究：根据需要使用可用工具获取最新信息或检查待办
 3. 整理成结果：把你发现的最有价值的内容，组织成一条自然流畅的消息发给用户
 
-注意：必须调用工具做实际研究工作，不要凭空编造。消息不超过 200 字，像朋友分享发现一样自然。
-${PROMPT_STYLE}`;
+注意：必须调用工具做实际研究工作，不要凭空编造。`;
