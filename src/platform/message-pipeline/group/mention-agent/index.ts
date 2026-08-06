@@ -27,14 +27,14 @@ export const groupMentionAgentHandler: InternalMessagePipelineHandler = {
       };
     }
 
-    const accepted = input.userWhitelist.includes(String(input.userId));
+    const accepted = input.userRegistered && input.personId !== undefined && input.userWhitelist.includes(input.personId);
     const rawMessage = stripLeadingSelfMention(input.rawMessage, input.rawSegments, input.selfId);
     return {
       category: this.category,
       accepted,
       rawMessage,
       messageSegments: buildMessageSegments(rawMessage, input.rawSegments),
-      reason: accepted ? undefined : "group_user_not_whitelisted",
+      reason: accepted ? undefined : "user_account_not_registered",
     };
   },
 };

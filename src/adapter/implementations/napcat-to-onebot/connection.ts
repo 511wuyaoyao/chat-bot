@@ -55,6 +55,7 @@ export class WsPing {
 
     this.statusTimer = setInterval(() => {
       this.options.logger.debug("WebSocket 心跳统计", {
+        __terminalFoldKey: "napcat-ws-heartbeat-summary",
         pingTotal: this.pingTotal,
         pongTotal: this.pongTotal,
         pingRecent,

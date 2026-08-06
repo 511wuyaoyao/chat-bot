@@ -12,7 +12,7 @@ import { getMainTools, executeMainTool } from "./tools";
 import { buildPromptMain } from "../../../prompt";
 import { latestAssistantUsageSince } from "../../../router/session/set";
 import { maybeCompactContext } from "../../../router/session/context-manager";
-import { config } from "../../../config";
+import { config } from "../../../config/output";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
@@ -57,3 +57,4 @@ export async function mainAgent(
 
   return reply;
 }
+

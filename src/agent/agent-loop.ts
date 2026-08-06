@@ -6,7 +6,7 @@ import OpenAI from "openai";
 import { getLlmClient } from "./llm-client";
 import { toolRegistry, ToolDefinition } from "./tool-registry";
 import { qaFallback } from "./qa-fallback";
-import { config } from "../config";
+import { config } from "../config/output";
 import { logger } from "../utils/logger";
 import { get } from "../router/session/get";
 import { set as sessionSet, recallUserMessage } from "../router/session/set";
@@ -15,7 +15,7 @@ import { ensureDir } from "../router/session/utils/storage";
 import { isRecalled } from "../router/message-queue";
 import { AttentionRuntimeContext, buildAttention } from "./attention/index";
 import { emitTransactionEvent } from "./transaction-event";
-import { addDebugTraceEvent, createDebugTrace, finishDebugTrace } from "../debug/trace-store";
+import { addDebugTraceEvent, createDebugTrace, finishDebugTrace } from "../frontend/trace-store";
 import { recordTokenUsage } from "./token-usage";
 import {
   TOOL_PROGRESS,
@@ -321,11 +321,12 @@ function structuredCloneSafe<T>(value: T): T {
 
 /** 浠庣幆澧冨彉閲忔瀯寤?thinking 鍙傛暟 */
 function thinkParams(): Record<string, unknown> {
-  const mode = process.env.AGENT_THINK_MODE || "non-thinking";
+  const mode = config.agent.thinkMode;
   if (mode === "non-thinking") return { thinking: { type: "disabled" } };
   return {
     thinking: { type: "enabled" },
     reasoning_effort: mode === "thinking_max" ? "max" : "high",
   };
 }
+
 

@@ -5,7 +5,6 @@
 import { mutateContext } from "../set";
 import type { StoredMessage } from "../utils/types";
 import {
-  ContextCompactionLayer,
   ContextCompactionReason,
   markDeleted,
   markToolTraceDeleted,
@@ -15,7 +14,9 @@ import {
 
 const MAIN_RECENT_KEEP = 6;
 
-export const MAIN_THRESHOLDS: Record<ContextCompactionLayer, number> = {
+export type MainContextCompactionLayer = 1 | 2 | 3;
+
+export const MAIN_THRESHOLDS: Record<MainContextCompactionLayer, number> = {
   1: 8_000,
   2: 16_000,
   3: 24_000,
@@ -24,7 +25,7 @@ export const MAIN_THRESHOLDS: Record<ContextCompactionLayer, number> = {
 export function compactMainContext(
   sessionId: string,
   baseDir: string,
-  layer: ContextCompactionLayer
+  layer: MainContextCompactionLayer
 ): { changed: number; reason: ContextCompactionReason } {
   if (layer === 3) return compactMainLayer3();
 

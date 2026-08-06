@@ -14,14 +14,14 @@ export const privateUserChatHandler: InternalMessagePipelineHandler = {
   },
 
   process(input) {
-    const accepted = input.userWhitelist.includes(String(input.userId));
+    const accepted = input.userRegistered && input.personId !== undefined && input.userWhitelist.includes(input.personId);
     const rawMessage = input.rawMessage.trim();
     return {
       category: this.category,
       accepted,
       rawMessage,
       messageSegments: buildMessageSegments(rawMessage, input.rawSegments),
-      reason: accepted ? undefined : "private_user_not_whitelisted",
+      reason: accepted ? undefined : "user_account_not_registered",
     };
   },
 };

@@ -2,7 +2,7 @@
  * 主动消息调度：定时任务检查和内置主动对话。
  */
 
-import { config } from "../config";
+import { config } from "../config/output";
 import { start as startChecker, stopAll as stopAllCheckers } from "../tools/schedule_tools/schedule_engine/checker";
 import { logger } from "../utils/logger";
 import { PROACTIVE_MESSAGE } from "../prompt";
@@ -14,8 +14,8 @@ let systemMessageSeq = 0;
 export type ProactiveEnqueue = (msg: InternalMessage) => void;
 
 export function startProactive(enqueue: ProactiveEnqueue): () => void {
-  for (const userId of config.qq.whitelist) {
-    startChecker(userId, async (uid, entry) => {
+  for (const user of config.qq.users) {
+    startChecker(user.id, async (uid, entry) => {
       try {
         const prompt = entry.id === PROACTIVE_ID
           ? entry.message || PROACTIVE_MESSAGE
@@ -35,7 +35,8 @@ export function startProactive(enqueue: ProactiveEnqueue): () => void {
 function buildSystemMessage(userId: string, prompt: string): InternalMessage {
   return {
     message_id: nextSystemMessageId(),
-    user_id: Number(userId),
+    user_id: userId,
+    person_id: userId,
     message_type: "private",
     raw_message: prompt,
     original_raw_message: prompt,
@@ -51,3 +52,4 @@ function nextSystemMessageId(): number {
   systemMessageSeq += 1;
   return -Date.now() - systemMessageSeq;
 }
+

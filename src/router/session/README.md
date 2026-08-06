@@ -5,8 +5,8 @@
 ## 存储结构
 
 ```text
-data/{userId}/session/
-  {userId}_{random}/
+data/{personId}/session/
+  {personId}_{random}/
     main/
       context.json
     topic/
@@ -15,7 +15,13 @@ data/{userId}/session/
       context.json
 ```
 
-topic queue 是用户级全局文件，不隶属单个 session：`data/{userId}/topic-queue.json`。
+`personId` 是系统内部长期身份 ID，不是平台账号 ID。平台账号 ID / openid 应保留在消息入参字段里，不能作为 data 根目录语义使用。
+
+topic queue 是 person 级全局文件，不隶属单个 session：
+
+```text
+data/{personId}/topic-queue.json
+```
 
 ## 文件
 

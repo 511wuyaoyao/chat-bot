@@ -1,6 +1,6 @@
 /**
- * 自发消息追踪器
- * 记录 adapter 发送出去的消息 ID，并在 message_sent 回流时消费。
+ * 自发消息追踪器。
+ * 记录 adapter 发送出去的消息 ID，并在后续普通 message 回流时消费。
  */
 
 const MAX_TRACKED_MESSAGE_IDS = 500;

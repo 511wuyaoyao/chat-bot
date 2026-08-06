@@ -32,7 +32,7 @@ export async function messageRouter(
   onProgress?: ProgressCallback,
   signal?: AbortSignal
 ): Promise<MessageRouterResult> {
-  const userId = String(msg.user_id);
+  const userId = String(msg.person_id ?? msg.user_id);
   const raw = msg.raw_message;
   if (!raw) return { reply: null };
 

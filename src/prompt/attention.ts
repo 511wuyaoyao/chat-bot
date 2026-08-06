@@ -10,7 +10,7 @@ export function buildAttentionSystemContent(attentionText: string): string {
 }
 
 export interface GroupChatAttentionPromptInput {
-  groupId?: number;
+  groupId?: string | number;
   speakerName: string;
   speakerId: string;
   adminName: string;

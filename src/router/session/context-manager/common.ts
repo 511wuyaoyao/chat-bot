@@ -7,7 +7,7 @@ import type { StoredMessage } from "../utils/types";
 import { nowISO } from "../../../utils/time-utils";
 
 export type ContextCompactionActor = "main-agent" | "topic-agent";
-export type ContextCompactionLayer = 1 | 2 | 3;
+export type ContextCompactionLayer = number;
 
 export type ContextCompactionReason =
   | "unsupported_actor"
@@ -24,7 +24,7 @@ const cooldown = new Map<string, number>();
 export function markDeleted(
   msg: StoredMessage,
   reason: NonNullable<StoredMessage["deletedReason"]>,
-  layer: ContextCompactionLayer
+  layer: number
 ): number {
   if (msg.deleted) return 0;
   msg.deleted = true;
@@ -37,7 +37,7 @@ export function markDeleted(
 export function markToolTraceDeleted(
   messages: StoredMessage[],
   reason: NonNullable<StoredMessage["deletedReason"]>,
-  layer: ContextCompactionLayer
+  layer: number
 ): number {
   let changed = 0;
   for (let i = 0; i < messages.length; i++) {
@@ -81,12 +81,12 @@ export function promptTokensOf(usage: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function cooldownReady(baseDir: string, actor: ContextCompactionActor, layer: ContextCompactionLayer): boolean {
+export function cooldownReady(baseDir: string, actor: ContextCompactionActor, layer: number): boolean {
   const last = cooldown.get(cooldownKey(baseDir, actor, layer));
   return last === undefined || Date.now() - last >= COOLDOWN_MS;
 }
 
-export function markCooldown(baseDir: string, actor: ContextCompactionActor, layer: ContextCompactionLayer): void {
+export function markCooldown(baseDir: string, actor: ContextCompactionActor, layer: number): void {
   cooldown.set(cooldownKey(baseDir, actor, layer), Date.now());
 }
 
@@ -94,6 +94,6 @@ export function clearContextCompactionCooldownForTest(): void {
   cooldown.clear();
 }
 
-function cooldownKey(baseDir: string, actor: ContextCompactionActor, layer: ContextCompactionLayer): string {
+function cooldownKey(baseDir: string, actor: ContextCompactionActor, layer: number): string {
   return `${path.resolve(baseDir)}::${actor}::${layer}`;
 }

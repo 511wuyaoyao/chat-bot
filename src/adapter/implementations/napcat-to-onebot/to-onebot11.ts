@@ -43,5 +43,5 @@ export function napcatRawEventToOneBot11(rawEvent: unknown): OneBot11IncomingEve
     }
   }
 
-  return src as OneBot11IncomingEvent;
+  return src as unknown as OneBot11IncomingEvent;
 }

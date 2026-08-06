@@ -4,3 +4,4 @@
 
 export * from "./protocol/onebot11";
 export { createOneBot11Adapter } from "./implementations/napcat-to-onebot";
+export { createQQBotToOneBot11Adapter } from "./implementations/qqbot-to-onebot";

@@ -35,7 +35,7 @@ export interface StoredMessage {
   /** 上下文压缩逻辑删除时间，北京时间字符串。 */
   deletedAt?: string;
   /** 上下文压缩层级。 */
-  compactionLayer?: 1 | 2 | 3;
+  compactionLayer?: number;
   /** 上下文压缩提示，仅存储，不回传给模型。 */
   compactionHints?: {
     topicWritten?: boolean;

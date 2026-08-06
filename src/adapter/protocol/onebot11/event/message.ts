@@ -2,18 +2,17 @@
  * OneBot v11 消息事件类型定义。
  */
 
-import type { OneBotCommonEventFields, OneBotMessageType } from "../common";
+import type { OneBotCommonEventFields, OneBotId, OneBotMessageType } from "../common";
 import type { OneBotMessage, OneBotMessageSegment } from "../message";
 
 export type OneBotMessageEvent = OneBotPrivateMessageEvent | OneBotGroupMessageEvent;
-export type OneBotSelfMessageEvent = OneBotMessageEvent & { post_type: "message_sent" };
 
 export interface OneBotBaseMessageEvent extends OneBotCommonEventFields {
-  post_type: "message" | "message_sent";
+  post_type: "message";
   message_type: OneBotMessageType;
   sub_type: string;
   message_id: number;
-  user_id: number;
+  user_id: OneBotId;
   message: OneBotMessage;
   raw_message: string;
   font: number;
@@ -28,13 +27,13 @@ export interface OneBotPrivateMessageEvent extends OneBotBaseMessageEvent {
 export interface OneBotGroupMessageEvent extends OneBotBaseMessageEvent {
   message_type: "group";
   sub_type: "normal" | "anonymous" | "notice" | string;
-  group_id: number;
+  group_id: OneBotId;
   anonymous?: OneBotAnonymousInfo | null;
   sender: OneBotGroupSender;
 }
 
 export interface OneBotPrivateSender {
-  user_id: number;
+  user_id: OneBotId;
   nickname: string;
   sex: "male" | "female" | "unknown" | string;
   age: number;
@@ -57,4 +56,3 @@ export interface OneBotAnonymousInfo {
 export interface OneBotMessageEventWithRawSegments extends OneBotBaseMessageEvent {
   message: OneBotMessageSegment[];
 }
-

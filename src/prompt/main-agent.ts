@@ -2,16 +2,16 @@
  * Main Agent 系统提示词与主动消息 Prompt
  */
 
-import { config } from "../config";
 import type { ToolDefinition } from "../agent/tool-registry";
+import { config } from "../config/output";
 import { PROMPT_STYLE } from "./style";
 import { formatToolDefinitions } from "./tools";
 
-const adminLabel = config.qq.adminName.trim() ||
-  config.qq.adminIds.join("、") ||
-  "管理员";
-
 export function buildPromptMain(tools: ToolDefinition[]): string {
+  const adminLabel = config.qq.adminName.trim() ||
+    config.qq.adminIds.join("、") ||
+    "管理员";
+
   return `你是${adminLabel}管理员的个人助理。你专注于与用户对话、判断用户意图，并给出自然回应。
 
 能力范围

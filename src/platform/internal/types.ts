@@ -3,6 +3,7 @@
  */
 
 export type InternalMessageType = "private" | "group";
+export type InternalPlatformId = number | string;
 
 export type InternalMessageCategory =
   | "private_self_chat"
@@ -14,7 +15,7 @@ export type InternalMessageCategory =
 
 export interface InternalReply {
   message_id: number;
-  user_id: number;
+  user_id: InternalPlatformId;
   raw_message: string;
   raw_segments?: unknown;
   parsed_message?: string;
@@ -22,8 +23,9 @@ export interface InternalReply {
 
 export interface InternalMessage {
   message_id: number;
-  user_id: number;
-  group_id?: number;
+  user_id: InternalPlatformId;
+  person_id?: string;
+  group_id?: InternalPlatformId;
   message_type: InternalMessageType;
   raw_message: string;
   original_raw_message?: string;
@@ -34,8 +36,8 @@ export interface InternalMessage {
   };
   reply?: InternalReply | null;
   is_self_sent?: boolean;
-  private_peer_id?: number;
-  self_id?: number;
+  private_peer_id?: InternalPlatformId;
+  self_id?: InternalPlatformId;
 }
 
 export interface InternalRecallEvent {

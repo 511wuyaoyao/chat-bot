@@ -1,6 +1,6 @@
 /**
- * 会话存储路径工具
- * 默认路径：data/{userId}/session/{sessionId}
+ * 会话存储路径工具。
+ * 默认路径：data/{personId}/session/{sessionId}。
  * Agent 可通过 baseDir 写入 main/topic/exec 子目录。
  */
 
@@ -9,15 +9,15 @@ import path from "path";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
-/** 从 sessionId 提取 userId（格式：{userId}_xxx...） */
-function userIdFrom(sessionId: string): string {
+/** 从 sessionId 提取 personId（格式：{personId}_xxx...）。 */
+function personIdFrom(sessionId: string): string {
   const idx = sessionId.indexOf("_");
   return idx < 0 ? sessionId : sessionId.slice(0, idx);
 }
 
 export function sessionDir(sessionId: string, baseDir?: string): string {
   if (baseDir) return baseDir;
-  return path.join(DATA_ROOT, userIdFrom(sessionId), "session", sessionId);
+  return path.join(DATA_ROOT, personIdFrom(sessionId), "session", sessionId);
 }
 
 export function ensureDir(sessionId: string, baseDir?: string): void {

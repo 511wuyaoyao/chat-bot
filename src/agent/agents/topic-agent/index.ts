@@ -11,7 +11,7 @@ import { pushTopic } from "../../attention/topic_queue";
 import { toolRegistry, ToolDefinition } from "../../tool-registry";
 import { logger } from "../../../utils/logger";
 import { buildPromptTopic } from "../../../prompt";
-import { config } from "../../../config";
+import { config } from "../../../config/output";
 import type { DialogueItem } from "./queue";
 import {
   latestAssistantUsageSince,

@@ -11,6 +11,7 @@ import { logger } from "../utils/logger";
 
 interface MessageRecord {
   sessionId: string;
+  personId: string;
 }
 
 const recalledIds = new Set<number>();
@@ -37,7 +38,7 @@ export class MessageQueue {
   }
 
   enqueue(msg: InternalMessage): void {
-    const uid = String(msg.user_id);
+    const uid = messagePersonId(msg);
     if (isRecalled(msg.message_id)) {
       logger.debug("skip recalled message enqueue", { user_id: uid, recalled_message_id: msg.message_id });
       return;
@@ -48,7 +49,7 @@ export class MessageQueue {
     const sid = getOrCreateSession(uid);
     archiveSet(sid, { role: "user", content: msg.raw_message });
 
-    this.messageMap.set(msg.message_id, { sessionId: sid });
+    this.messageMap.set(msg.message_id, { sessionId: sid, personId: uid });
 
     if (msg.reply && this.controller) {
       logger.debug("收到引用回复，中断当前 Agent 处理");
@@ -87,7 +88,7 @@ export class MessageQueue {
     const record = this.messageMap.get(messageId);
     if (!record) return;
 
-    handleRecall(userId, record.sessionId, messageId);
+    handleRecall(record.personId, record.sessionId, messageId);
     this.messageMap.delete(messageId);
   }
 
@@ -103,7 +104,8 @@ export class MessageQueue {
       this.controller = new AbortController();
       const controller = this.controller;
       const signal = controller.signal;
-      const uid = String(msg.user_id);
+      const uid = messagePersonId(msg);
+      const platformUserId = String(msg.user_id);
       const progressMsgIds: number[] = [];
       const shouldStop = () => signal.aborted || isRecalled(msg.message_id);
 
@@ -112,7 +114,7 @@ export class MessageQueue {
           msg,
           async (_toolName, desc) => {
             if (shouldStop()) return;
-            const id = await this.getPlatform().sendMessage(msg.message_type, uid, desc, msg.group_id);
+            const id = await this.getPlatform().sendMessage(msg.message_type, platformUserId, desc, msg.group_id);
             if (!id) return;
             progressMsgIds.push(id);
             if (shouldStop()) await this.getPlatform().recallMessage(id);
@@ -121,7 +123,7 @@ export class MessageQueue {
         );
 
         if (!shouldStop() && reply.reply) {
-          const replyMessageId = await this.getPlatform().sendMessage(msg.message_type, uid, reply.reply, msg.group_id);
+          const replyMessageId = await this.getPlatform().sendMessage(msg.message_type, platformUserId, reply.reply, msg.group_id);
           if (shouldStop() && replyMessageId) {
             await this.getPlatform().recallMessage(replyMessageId);
           } else {
@@ -141,4 +143,8 @@ export class MessageQueue {
     }
   }
 
+}
+
+function messagePersonId(msg: InternalMessage): string {
+  return String(msg.person_id ?? msg.user_id);
 }

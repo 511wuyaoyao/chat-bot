@@ -2,10 +2,11 @@
  * OneBot v11 通用基础类型。
  */
 
-export type OneBotPostType = "message" | "message_sent" | "notice" | "request" | "meta_event";
+export type OneBotPostType = "message" | "notice" | "request" | "meta_event";
 export type OneBotMessageType = "private" | "group";
 export type OneBotMessageFormat = "string" | "array";
 export type OneBotApiStatus = "ok" | "failed";
+export type OneBotId = number | string;
 
 export interface OneBotApiResponse<TData = unknown> {
   status?: OneBotApiStatus | string;
@@ -30,7 +31,6 @@ export interface OneBotFileInfo {
 
 export interface OneBotCommonEventFields {
   time: number;
-  self_id: number;
+  self_id: OneBotId;
   post_type: OneBotPostType;
 }
-

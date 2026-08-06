@@ -4,7 +4,7 @@
  */
 
 import { toolRegistry, ToolHandler } from "../../agent/tool-registry";
-import { config } from "../../config";
+import { config } from "../../config/output";
 import { logger } from "../../utils/logger";
 
 type TavilySearchDepth = "basic" | "advanced";

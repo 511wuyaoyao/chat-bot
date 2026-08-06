@@ -5,13 +5,11 @@
 
 import fs from "fs";
 import path from "path";
-import dotenv from "dotenv";
-import { config } from "../config";
+import { config } from "../config/output";
 import { nowISO, todayStr } from "./time-utils";
 
-dotenv.config();
-
 type LogLevel = "info" | "warn" | "error" | "debug";
+type LogMeta = Record<string, unknown>;
 
 const LOG_LEVELS: Record<LogLevel, number> = {
   debug: 0,
@@ -40,13 +38,14 @@ const MODULE_COLORS = [
 
 const RESET = "\x1b[0m";
 const DIM = "\x1b[90m";
-
-const envLevel = process.env.LOG_LEVEL as LogLevel | undefined;
-const consoleLevel: LogLevel = envLevel && envLevel in LOG_LEVELS ? envLevel : "info";
+const TERMINAL_FOLD_KEY = "__terminalFoldKey";
 
 let currentDate = "";
 let writeQueue: Promise<void> = Promise.resolve();
 let dirReady = false;
+let lastTerminalFoldKey: string | null = null;
+let lastConsoleLineFolded = false;
+let lastConsoleLineRows = 1;
 
 function getLogPath(): string {
   const today = todayStr();
@@ -118,17 +117,62 @@ export async function cleanOldLogs(): Promise<void> {
 function log(level: LogLevel, msg: string, extra?: Record<string, unknown>): void {
   const moduleName = inferModuleName();
   const userLabel = inferUserLabel(extra);
+  const terminalFoldKey = readTerminalFoldKey(extra);
+  const visibleExtra = stripInternalMeta(extra);
 
-  if (LOG_LEVELS[level] >= LOG_LEVELS[consoleLevel]) {
+  if (LOG_LEVELS[level] >= LOG_LEVELS[config.log.level]) {
     const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     const userText = `${userColor(userLabel)}[${userLabel}]${RESET}`;
     const levelText = `${LEVEL_COLORS[level]}[${level.toUpperCase()}]${RESET}`;
     const moduleText = `${moduleColor(moduleName)}[${moduleName}]${RESET}`;
-    const extraStr = extra ? ` ${DIM}${safeJson(extra)}${RESET}` : "";
-    console.log(`${DIM}${time}${RESET} ${userText} ${levelText} ${moduleText} ${msg}${extraStr}`);
+    const extraStr = visibleExtra ? ` ${DIM}${safeJson(visibleExtra)}${RESET}` : "";
+    writeConsoleLine(`${DIM}${time}${RESET} ${userText} ${levelText} ${moduleText} ${msg}${extraStr}`, terminalFoldKey);
   }
 
-  appendToFile(level, moduleName, userLabel, msg, extra);
+  appendToFile(level, moduleName, userLabel, msg, visibleExtra);
+}
+
+function writeConsoleLine(line: string, terminalFoldKey: string | null): void {
+  const lineRows = countTerminalRows(line);
+
+  if (!terminalFoldKey || !process.stdout.isTTY) {
+    console.log(line);
+    lastTerminalFoldKey = null;
+    lastConsoleLineFolded = false;
+    lastConsoleLineRows = 1;
+    return;
+  }
+
+  if (lastConsoleLineFolded && lastTerminalFoldKey === terminalFoldKey) {
+    process.stdout.write(`\x1b[${lastConsoleLineRows}A\x1b[0J${line}\n`);
+  } else {
+    process.stdout.write(`${line}\n`);
+  }
+
+  lastTerminalFoldKey = terminalFoldKey;
+  lastConsoleLineFolded = true;
+  lastConsoleLineRows = lineRows;
+}
+
+function countTerminalRows(line: string): number {
+  const columns = process.stdout.columns && process.stdout.columns > 0 ? process.stdout.columns : 120;
+  const visibleLength = stripAnsi(line).length;
+  return Math.max(1, Math.ceil(visibleLength / columns));
+}
+
+function stripAnsi(value: string): string {
+  return value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function readTerminalFoldKey(extra?: LogMeta): string | null {
+  const value = extra?.[TERMINAL_FOLD_KEY];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function stripInternalMeta(extra?: LogMeta): LogMeta | undefined {
+  if (!extra) return undefined;
+  const entries = Object.entries(extra).filter(([key]) => !key.startsWith("__terminal"));
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 function inferModuleName(): string {
@@ -227,4 +271,5 @@ export const logger = {
   error: (msg: string, extra?: Record<string, unknown>) => log("error", msg, extra),
   debug: (msg: string, extra?: Record<string, unknown>) => log("debug", msg, extra),
 };
+
 

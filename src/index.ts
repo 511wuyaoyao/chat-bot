@@ -2,7 +2,7 @@
  * 个人管家 Bot 入口。
  */
 
-import { validateConfig } from "./config";
+import { validateConfig } from "./config/output";
 import "./tools";
 import { recordTokenUsage } from "./agent/token-usage";
 import { Platform, InternalMessage, MsgHeartbeat } from "./platform/output";
@@ -10,7 +10,7 @@ import { getOrCreateSession } from "./router/data-index";
 import { MessageQueue } from "./router/message-queue";
 import { startProactive } from "./scheduler/proactive";
 import { logger, cleanOldLogs } from "./utils/logger";
-import { startDebugServer } from "./debug/server";
+import { startDebugServer } from "./frontend/server";
 
 async function main() {
   await cleanOldLogs();
@@ -39,11 +39,22 @@ async function main() {
 
   platform.start();
 
-  const heartbeat = new MsgHeartbeat(platform);
+  let heartbeat = new MsgHeartbeat(platform);
   heartbeat.start();
 
-  const stopProactive = startProactive((msg) => queue.enqueue(msg));
-  const stopDebugServer = startDebugServer();
+  let stopProactive = startProactive((msg) => queue.enqueue(msg));
+  const stopDebugServer = startDebugServer({
+    onPlatformReload: () => platform.reloadTransport(),
+    onHeartbeatReload: () => {
+      heartbeat.stop();
+      heartbeat = new MsgHeartbeat(platform);
+      heartbeat.start();
+    },
+    onAccessReload: () => {
+      stopProactive();
+      stopProactive = startProactive((msg) => queue.enqueue(msg));
+    },
+  });
 
   const shutdown = () => {
     logger.info("正在关闭...");
@@ -61,3 +72,4 @@ main().catch((err) => {
   logger.error("启动失败", { error: String(err) });
   process.exit(1);
 });
+

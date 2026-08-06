@@ -5,13 +5,15 @@
 
 import fs from "fs";
 import path from "path";
-import { config } from "../../config";
+import { config } from "../../config/output";
+import { accountKey } from "../../config/identity";
+import type { QQUserConfig } from "../../config/output";
 import { formatGlobalTokenUsageReport, TokenUsagePeriod } from "../../agent/token-usage";
 import { messages } from "../../prompt";
 import { commandRegistry } from "./registry";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
-const ENV_PATH = path.resolve(process.cwd(), ".env");
+const ENV_PATH = path.resolve(process.cwd(), "env", ".env.access");
 
 commandRegistry.register({
   name: "admin",
@@ -72,7 +74,7 @@ function dataUserIds(): string[] {
   if (!fs.existsSync(DATA_ROOT)) return [];
 
   return fs.readdirSync(DATA_ROOT, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && /^\d+$/.test(entry.name))
+    .filter((entry) => entry.isDirectory() && /^[A-Za-z0-9_-]{1,128}$/.test(entry.name))
     .map((entry) => entry.name);
 }
 
@@ -94,10 +96,14 @@ function executeWhitelist(kind: "user" | "group", args: string[]): string {
 
   if (action === "list") return messages.commands.whitelistList(label, list);
   if ((action !== "add" && action !== "del") || !id) return messages.commands.whitelistUsage;
+  if (kind === "user" && config.qq.usersJsonConfigured) {
+    return "QQ_USERS_JSON 已启用，请在 Debug Config 的 Users 字段中维护用户与账号映射。";
+  }
 
   if (action === "add") {
     if (list.includes(id)) return messages.commands.whitelistExists(label, id);
     list.push(id);
+    if (kind === "user") addLegacyUserIdentity(id);
     syncLegacyWhitelist();
     persistWhitelist(kind);
     return messages.commands.whitelistAdded(label, id);
@@ -106,9 +112,33 @@ function executeWhitelist(kind: "user" | "group", args: string[]): string {
   const index = list.indexOf(id);
   if (index < 0) return messages.commands.whitelistMissing(label, id);
   list.splice(index, 1);
+  if (kind === "user") removeLegacyUserIdentity(id);
   syncLegacyWhitelist();
   persistWhitelist(kind);
   return messages.commands.whitelistRemoved(label, id);
+}
+
+function addLegacyUserIdentity(id: string): void {
+  if (config.qq.users.some((user) => user.id === id)) return;
+  const user: QQUserConfig = {
+    id,
+    name: id,
+    accounts: [
+      { platform: "napcat", id, label: "legacy" },
+      { platform: "qqbot-official", id, label: "legacy" },
+    ],
+    primaryAccount: { platform: config.platform.adapter, id, label: "legacy" },
+    fields: {},
+  };
+  config.qq.users.push(user);
+  config.qq.accountToUser[accountKey("napcat", id)] = user;
+  config.qq.accountToUser[accountKey("qqbot-official", id)] = user;
+}
+
+function removeLegacyUserIdentity(id: string): void {
+  config.qq.users = config.qq.users.filter((user) => user.id !== id);
+  delete config.qq.accountToUser[accountKey("napcat", id)];
+  delete config.qq.accountToUser[accountKey("qqbot-official", id)];
 }
 
 function syncLegacyWhitelist(): void {
@@ -116,7 +146,7 @@ function syncLegacyWhitelist(): void {
 }
 
 function persistWhitelist(kind: "user" | "group"): void {
-  const key = kind === "user" ? "QQ_WHITELIST" : "QQ_GROUP_WHITELIST";
+  const key = kind === "user" ? "QQ_USER_WHITELIST" : "QQ_GROUP_WHITELIST";
   const values = kind === "user" ? config.qq.userWhitelist : config.qq.groupWhitelist;
   setEnvJsonList(key, values);
 }
@@ -139,3 +169,4 @@ function escapeRegExp(value: string): string {
 function isTokenUsagePeriod(value: string): value is TokenUsagePeriod {
   return value === "total" || value === "day" || value === "week" || value === "month";
 }
+

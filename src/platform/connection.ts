@@ -2,7 +2,7 @@
  * 平台消息心跳。
  */
 
-import { config } from "../config";
+import { config } from "../config/output";
 import { logger } from "../utils/logger";
 import type { Platform } from "./platform";
 

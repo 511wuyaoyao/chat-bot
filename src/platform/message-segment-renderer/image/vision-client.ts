@@ -5,7 +5,7 @@
 
 import http from "http";
 import https from "https";
-import { config } from "../../../config";
+import { config } from "../../../config/output";
 import { logger } from "../../../utils/logger";
 
 interface ArkChatCompletionResponse {

@@ -4,16 +4,18 @@
  */
 
 import type { OneBotMessageSegment } from "../../adapter/protocol/onebot11";
-import type { InternalMessageCategory, InternalMessageType } from "../internal";
+import type { InternalMessageCategory, InternalMessageType, InternalPlatformId } from "../internal";
 
 export interface InternalMessagePipelineInput {
   messageType: InternalMessageType;
-  userId: number;
-  groupId?: number;
+  userId: InternalPlatformId;
+  personId?: string;
+  groupId?: InternalPlatformId;
   selfId: string;
   rawMessage: string;
   rawSegments?: unknown;
   isSelfSent?: boolean;
+  userRegistered: boolean;
   userWhitelist: string[];
   groupWhitelist: string[];
 }

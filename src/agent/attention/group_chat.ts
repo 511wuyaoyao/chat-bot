@@ -3,12 +3,12 @@
  * 把当前群聊消息的发言人、群号和管理员配置整理成 attention 文本。
  */
 
-import { config } from "../../config";
+import { config } from "../../config/output";
 import { buildGroupChatAttentionPrompt } from "../../prompt";
 
 export interface GroupChatAttentionInput {
   messageType?: "private" | "group";
-  groupId?: number;
+  groupId?: string | number;
   userId: string;
   sender?: {
     nickname?: string;

@@ -5,7 +5,6 @@
 import { mutateContext } from "../set";
 import type { StoredMessage } from "../utils/types";
 import {
-  ContextCompactionLayer,
   ContextCompactionReason,
   markDeleted,
   markToolTraceDeleted,
@@ -15,16 +14,19 @@ import {
 
 const TOPIC_RECENT_ASSISTANT_KEEP = 6;
 
-export const TOPIC_THRESHOLDS: Record<ContextCompactionLayer, number> = {
+export type TopicContextCompactionLayer = 1 | 2 | 3 | 4;
+
+export const TOPIC_THRESHOLDS: Record<TopicContextCompactionLayer, number> = {
   1: 4_000,
   2: 8_000,
   3: 12_000,
+  4: 16_000,
 };
 
 export function compactTopicContext(
   sessionId: string,
   baseDir: string,
-  layer: ContextCompactionLayer
+  layer: TopicContextCompactionLayer
 ): { changed: number; reason: ContextCompactionReason } {
   let changed = 0;
   mutateContext(sessionId, (messages) => {
@@ -32,9 +34,13 @@ export function compactTopicContext(
       ? compactTopicLayer1(messages)
       : layer === 2
         ? compactTopicLayer2(messages)
-        : compactTopicLayer3(messages);
+        : layer === 3
+          ? compactTopicLayer3(messages)
+          : compactTopicLayer4();
     return changed > 0;
   }, baseDir);
+
+  if (layer === 4) return { changed: 0, reason: "not_implemented" };
 
   return changed > 0
     ? { changed, reason: "compacted" }
@@ -70,4 +76,8 @@ function compactTopicLayer3(messages: StoredMessage[]): number {
     changed += markDeleted(msg, "topic_no_persist", 3);
   }
   return changed;
+}
+
+function compactTopicLayer4(): number {
+  return 0;
 }

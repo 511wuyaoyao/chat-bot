@@ -4,13 +4,11 @@
  */
 
 import http from "http";
-import { config } from "../../../config";
+import { config } from "../../../config/output";
 import { ForwardMessageApiResponse, ForwardedMessage } from "./types";
 
-const napcatUrl = process.env.NAPCAT_BASE_URL || "http://127.0.0.1:3000";
-
 export async function fetchForwardMessages(id: string): Promise<ForwardedMessage[] | null> {
-  const response = await httpPost(`${napcatUrl}/get_forward_msg`, { id });
+  const response = await httpPost(`${config.qq.napcatBaseUrl}/get_forward_msg`, { id });
   const parsed = JSON.parse(response) as ForwardMessageApiResponse;
   const ok = parsed.status === "ok" || parsed.retcode === 0;
   if (!ok) return null;
@@ -63,3 +61,4 @@ function httpPost(url: string, body: unknown): Promise<string> {
     req.end();
   });
 }
+

@@ -1,6 +1,6 @@
 /**
  * 自聊回声过滤器。
- * 仅处理 bot 私聊发送给自己后，message_sent 回流又被当作用户输入的场景。
+ * 用于处理 bot 私聊发送给自己后，又被实现端回流成普通 message 的场景。
  */
 
 import type { InternalMessage } from "./internal";

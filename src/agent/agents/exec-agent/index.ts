@@ -9,7 +9,7 @@ import path from "path";
 import { agentLoop, ProgressCallback } from "../../agent-loop";
 import { toolRegistry } from "../../tool-registry";
 import { getExecTools } from "./tools";
-import { config } from "../../../config";
+import { config } from "../../../config/output";
 import { buildPromptExec } from "../../../prompt";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
@@ -39,3 +39,4 @@ export async function execAgent(
     signal,
   });
 }
+

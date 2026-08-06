@@ -6,7 +6,7 @@
 import fs from "fs";
 import path from "path";
 import { onTransactionEvent, TransactionEvent } from "./event";
-import { config } from "../../config";
+import { config } from "../../config/output";
 
 const DATA_ROOT = path.resolve(process.cwd(), "data");
 
@@ -169,3 +169,4 @@ function summaryOf(event: TransactionEvent): string {
 onTransactionEvent((event) => {
   if (shouldPersist(event)) persistTransactionEvent(event);
 });
+

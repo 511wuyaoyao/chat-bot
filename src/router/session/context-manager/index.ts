@@ -12,11 +12,16 @@ import {
   markCooldown,
   promptTokensOf,
 } from "./common";
-import { compactMainContext, MAIN_THRESHOLDS } from "./main-agent";
-import { compactTopicContext, TOPIC_THRESHOLDS } from "./topic-agent";
+import { compactMainContext, MAIN_THRESHOLDS, MainContextCompactionLayer } from "./main-agent";
+import { compactTopicContext, TOPIC_THRESHOLDS, TopicContextCompactionLayer } from "./topic-agent";
 
 export { clearContextCompactionCooldownForTest } from "./common";
-export type { ContextCompactionActor, ContextCompactionLayer } from "./common";
+export type {
+  ContextCompactionActor,
+  ContextCompactionLayer,
+} from "./common";
+export type { MainContextCompactionLayer } from "./main-agent";
+export type { TopicContextCompactionLayer } from "./topic-agent";
 
 export interface ContextCompactionInput {
   sessionId: string;
@@ -34,6 +39,9 @@ export interface ContextCompactionResult {
   promptTokens: number;
 }
 
+const MAIN_LAYERS: MainContextCompactionLayer[] = [1, 2, 3];
+const TOPIC_LAYERS: TopicContextCompactionLayer[] = [1, 2, 3, 4];
+
 export function maybeCompactContext(input: ContextCompactionInput): ContextCompactionResult {
   const actor = normalizeActor(input.actor);
   const promptTokens = promptTokensOf(input.usage);
@@ -46,24 +54,58 @@ export function maybeCompactContext(input: ContextCompactionInput): ContextCompa
     return { attempted: false, actor, changed: 0, reason: "missing_base_dir", promptTokens };
   }
 
-  const thresholds = actor === "main-agent" ? MAIN_THRESHOLDS : TOPIC_THRESHOLDS;
-  const layers: ContextCompactionLayer[] = actor === "main-agent" ? [1, 2, 3] : [1, 2, 3];
+  if (actor === "main-agent") {
+    return runCompactionLayers({
+      input,
+      actor,
+      promptTokens,
+      layers: MAIN_LAYERS,
+      thresholdOf: (layer) => MAIN_THRESHOLDS[layer],
+      runLayer: (layer) => compactMainContext(input.sessionId, input.baseDir!, layer),
+    });
+  }
+
+  return runCompactionLayers({
+    input,
+    actor,
+    promptTokens,
+    layers: TOPIC_LAYERS,
+    thresholdOf: (layer) => TOPIC_THRESHOLDS[layer],
+    runLayer: (layer) => compactTopicContext(input.sessionId, input.baseDir!, layer),
+  });
+}
+
+function runCompactionLayers<TLayer extends number>(options: {
+  input: ContextCompactionInput;
+  actor: ContextCompactionActor;
+  promptTokens: number;
+  layers: TLayer[];
+  thresholdOf: (layer: TLayer) => number;
+  runLayer: (layer: TLayer) => Pick<ContextCompactionResult, "changed" | "reason">;
+}): ContextCompactionResult {
+  const { input, actor, promptTokens, layers, thresholdOf, runLayer } = options;
+  const baseDir = input.baseDir;
+  if (!baseDir) {
+    return { attempted: false, actor, changed: 0, reason: "missing_base_dir", promptTokens };
+  }
+
   let sawThreshold = false;
   let sawCooldown = false;
   let sawNoCandidate = false;
 
   for (const layer of layers) {
-    if (promptTokens < thresholds[layer]) continue;
+    const threshold = thresholdOf(layer);
+    if (promptTokens < threshold) continue;
     sawThreshold = true;
 
-    if (!cooldownReady(input.baseDir, actor, layer)) {
+    if (!cooldownReady(baseDir, actor, layer)) {
       sawCooldown = true;
       continue;
     }
 
-    const result = runLayer(input.sessionId, input.baseDir, actor, layer);
+    const result = runLayer(layer);
     if (result.reason === "compacted") {
-      markCooldown(input.baseDir, actor, layer);
+      markCooldown(baseDir, actor, layer);
       logger.debug("上下文压缩完成", {
         sessionId: input.sessionId,
         actor,
@@ -85,16 +127,6 @@ export function maybeCompactContext(input: ContextCompactionInput): ContextCompa
   if (sawNoCandidate) return { attempted: true, actor, changed: 0, reason: "no_candidate", promptTokens };
   if (sawCooldown) return { attempted: true, actor, changed: 0, reason: "cooldown", promptTokens };
   return { attempted: true, actor, changed: 0, reason: "no_candidate", promptTokens };
-}
-
-function runLayer(
-  sessionId: string,
-  baseDir: string,
-  actor: ContextCompactionActor,
-  layer: ContextCompactionLayer
-): Pick<ContextCompactionResult, "changed" | "reason"> {
-  if (actor === "main-agent") return compactMainContext(sessionId, baseDir, layer);
-  return compactTopicContext(sessionId, baseDir, layer);
 }
 
 function normalizeActor(actor: string): ContextCompactionActor | null {

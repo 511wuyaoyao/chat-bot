@@ -3,7 +3,7 @@
  */
 
 import { messages } from "../../prompt";
-import { config } from "../../config";
+import { config } from "../../config/output";
 import { commandRegistry } from "./registry";
 
 commandRegistry.register({

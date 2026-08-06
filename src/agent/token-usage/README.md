@@ -12,5 +12,7 @@
 ## 存储
 
 ```text
-data/{userId}/session/{mainSessionId}/token-usage.json
+data/{personId}/session/{mainSessionId}/token-usage.json
 ```
+
+`personId` 是内部身份 ID。历史数据目录由用户手动迁移，本模块只按传入的 personId 读写。

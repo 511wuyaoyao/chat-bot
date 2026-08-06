@@ -4,7 +4,7 @@
  */
 
 import OpenAI from "openai";
-import { config } from "../config";
+import { config } from "../config/output";
 
 let _client: OpenAI | null = null;
 
@@ -18,3 +18,4 @@ export function getLlmClient(): OpenAI {
   }
   return _client;
 }
+

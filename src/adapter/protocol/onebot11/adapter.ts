@@ -13,7 +13,7 @@ import type {
 } from "./api/message";
 import type { OneBotEvent } from "./event";
 
-export type OneBot11IncomingEvent = OneBotEvent & Record<string, unknown>;
+export type OneBot11IncomingEvent = OneBotEvent;
 
 export interface OneBot11Logger {
   debug(message: string, meta?: Record<string, unknown>): void;

@@ -11,7 +11,7 @@ const ROOT = path.resolve(process.cwd(), "data");
 const INTERNAL_TREE_DIR_NAMES = new Set(["session"]);
 
 function userRoot(userId: string): string {
-  if (!/^\d+$/.test(userId)) {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId)) {
     throw new Error(`Invalid data userId: ${userId}`);
   }
   return path.resolve(ROOT, userId);

@@ -7,7 +7,7 @@
 import { StoredMessage } from "./utils/types";
 import { getCache } from "./set";
 import { logger } from "../../utils/logger";
-import { config } from "../../config";
+import { config } from "../../config/output";
 
 interface HistorySegment {
   messages: StoredMessage[];

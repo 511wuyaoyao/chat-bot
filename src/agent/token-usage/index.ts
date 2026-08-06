@@ -376,7 +376,7 @@ function tokenUsageFiles(): string[] {
 function userIdFromTokenUsageFile(fp: string): string | null {
   const relative = path.relative(DATA_ROOT, fp);
   const [userId] = relative.split(path.sep);
-  return /^\d+$/.test(userId) ? userId : null;
+  return /^[A-Za-z0-9_-]{1,128}$/.test(userId) ? userId : null;
 }
 
 function recentDates(days: number): string[] {
